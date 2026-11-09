@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
-import { colyseus, type GameRoom, type RoomInit } from "./lib/client";
+import { colyseus, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleSwapMsg } from "./lib/client";
 import type { Player } from "../../server/src/schema/GameState";
 import { TopBar } from "./components/TopBar";
 import { PhaseBanner } from "./components/PhaseBanner";
@@ -71,10 +71,15 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [init, setInit] = useState<RoomInit | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [myFaction, setMyFaction] = useState<Faction | null>(null);
+  const [gameover, setGameover] = useState<GameOverMsg | null>(null);
 
   useEffect(() => {
     room.onStateChange(() => force());
     room.onMessage("init", (d: RoomInit) => setInit(d));
+    room.onMessage("role", (d: RoleMsg) => setMyFaction(d.faction));
+    room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
+    room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
     room.onMessage("chat", (m: { from: string; text: string }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "chat", from: m.from, text: m.text }]));
     room.onMessage("notice", (m: { text: string }) =>
@@ -90,8 +95,15 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
 
   return (
     <div className="game">
-      <TopBar me={me} />
+      <TopBar me={me} myFaction={myFaction} />
       <PhaseBanner day={s.day} phase={s.phase} endsAt={s.phaseEndsAt} />
+      {gameover && (
+        <div className={`gameover ${gameover.winner}`}>
+          <h2>{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</h2>
+          <p>{gameover.detail}</p>
+          <p className="sub">{gameover.reason} · 理事长：{gameover.chairs.join("、") || "无"} · 存活干事：{gameover.students.join("、") || "无"}</p>
+        </div>
+      )}
       <div className="main">
         <div className="col left">
           {init ? (
@@ -116,7 +128,7 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
         </div>
         <div className="col right">
           {init && <RuleBoard fixedRules={init.fixedRules} ruleBoard={init.ruleBoard} />}
-          <PlayerList players={players} myId={room.sessionId} />
+          <PlayerList players={players} myId={room.sessionId} myFaction={myFaction} />
           <ChatPanel msgs={msgs} onSend={(t) => room.send("chat", { text: t })} />
         </div>
       </div>

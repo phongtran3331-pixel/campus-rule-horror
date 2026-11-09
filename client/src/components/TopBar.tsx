@@ -1,4 +1,5 @@
 import type { Player } from "../../../server/src/schema/GameState";
+import type { Faction } from "../lib/client";
 
 const items: Array<{ key: keyof Player; label: string }> = [
   { key: "hp", label: "HP" },
@@ -8,7 +9,7 @@ const items: Array<{ key: keyof Player; label: string }> = [
   { key: "coins", label: "币" },
 ];
 
-export function TopBar({ me }: { me: Player | undefined }) {
+export function TopBar({ me, myFaction }: { me: Player | undefined; myFaction: Faction | null }) {
   return (
     <div className="topbar">
       {items.map(({ key, label }) => {
@@ -23,7 +24,7 @@ export function TopBar({ me }: { me: Player | undefined }) {
           </div>
         );
       })}
-      <span className="who">{me?.name}{me?.faction === "chair" ? " · 理事长" : me?.faction === "student" ? " · 干事" : ""}</span>
+      <span className="who">{me?.name}{myFaction === "chair" ? " · 理事长" : myFaction === "student" ? " · 干事" : ""}</span>
     </div>
   );
 }

@@ -1,11 +1,11 @@
 import { MapSchema, Schema, type } from "@colyseus/schema";
 
+// 阵营为服务端私有（社交推理核心机密），经 "role" 私发消息告知本人，不进同步状态
 export type Faction = "none" | "student" | "chair";
 
 export class Player extends Schema {
   @type("string") name = "";
   @type("string") gender = ""; // male | female（R1 判定需要）
-  @type("string") faction: Faction = "none";
   @type("string") nodeId = "dorm";
   @type("number") hp = 100;
   @type("number") san = 100;
