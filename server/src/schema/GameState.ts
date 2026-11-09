@@ -14,6 +14,15 @@ export class Player extends Schema {
   @type("number") coins = 20;
   @type("boolean") alive = true;
   @type("boolean") connected = true;
+  // 背包（M3）：数量均同步给本人客户端
+  @type("number") food = 0;        // 食物（进食 +30 饥饿）
+  @type("number") medicine = 0;    // 药物（用药 +30HP 或 +20SAN）
+  @type("number") scissors = 0;    // 剪刀（剪网线，M4 网络中心用）
+  @type("number") coffee = 0;      // 咖啡券（咖啡屋 +50HP 或 +30SAN）
+  @type("number") junk = 0;        // 杂物件数
+  @type("number") junkValue = 0;   // 杂物总价值（回收站变现）
+  @type("number") cards = 0;       // 行政楼查阅卡（M4 影像室用）
+  @type("string") keys = "";       // 社区房间钥匙，逗号分隔：key_office/key_dept/key_cce
 }
 
 export class GameState extends Schema {

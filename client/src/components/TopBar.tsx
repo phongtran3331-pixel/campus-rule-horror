@@ -25,6 +25,13 @@ export function TopBar({ me, myFaction }: { me: Player | undefined; myFaction: F
         );
       })}
       <span className="who">{me?.name}{myFaction === "chair" ? " · 理事长" : myFaction === "student" ? " · 干事" : ""}</span>
+      {me && (
+        <span className="inv" title="背包">
+          🍞{me.food} 💊{me.medicine} ✂{me.scissors} ☕{me.coffee} 🗑{me.junk}
+          {me.cards > 0 ? ` 🪪${me.cards}` : ""}
+          {me.keys ? ` 🔑${me.keys.split(",").filter(Boolean).length}` : ""}
+        </span>
+      )}
     </div>
   );
 }
