@@ -1,9 +1,10 @@
-// 一昼夜流程计时（11 分钟四时段；timeScale 供测试加速，正式局 = 1）
+// 一昼夜流程计时（实测 11 分钟过紧，探索时段翻倍：20 分钟五时段；timeScale 供测试加速，正式局 = 1）
+// 虚拟时刻换算：1 现实分钟 = 30 虚拟分钟，时段虚拟窗口见 client/src/lib/vtime.ts
 export const PHASE_MINUTES: Record<string, number> = {
-  morning: 3,
+  morning: 6,
   noon: 3,
-  afternoon: 3,
-  evening: 2,
+  afternoon: 6,
+  evening: 4,
   night: 1,
 };
 export const PHASE_ORDER = ["morning", "noon", "afternoon", "evening", "night"] as const;

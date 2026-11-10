@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { GameState, Player, type Faction } from "../schema/GameState.js";
-import { EDGES, NODES } from "../data/map.js";
+import { EDGES, NODES, nodeDistance } from "../data/map.js";
 import { FIXED_RULES, drawRuleBoard, type Rule } from "../data/rules.js";
 import { PhaseTimer, PHASE_ORDER, type Phase } from "../logic/PhaseTimer.js";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../logic/RuleEngine.js";
 import { PRICES, rollLoot } from "../data/loot.js";
 import { exploreText, FOOD_NAMES, JUNK_NAMES, MEDICINE_NAMES, NPC, pick } from "../data/flavor.js";
+import { ITEM_CATALOG, rollTreasure } from "../data/items.js";
 
 interface JoinOptions {
   name?: string;
@@ -174,6 +175,7 @@ export class GameRoom extends Room<GameState> {
 
   private enterPhase(phase: Phase, day: number) {
     this.state.phase = phase;
+    this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = this.timer.start(phase, day, () => this.onPhaseEnd(phase, day));
     this.broadcast("phase", { phase, day, endsAt: this.state.phaseEndsAt });
 
@@ -305,11 +307,13 @@ export class GameRoom extends Room<GameState> {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || this.state.phase === "lobby") return;
     const target = NODES.find((n) => n.id === msg?.nodeId);
-    const ok = target && EDGES.some(([a, b]) => (a === p.nodeId && b === target.id) || (b === p.nodeId && a === target.id));
-    if (process.env.SMOKE_DEBUG) console.log(`[mv ${(Date.now() % 100000) / 1000}s] ${p.name} ${p.nodeId}->${msg?.nodeId} ok=${!!ok} ap=${p.ap} phase=${this.state.phase}`);
-    if (!ok) return;
+    if (!target || target.id === p.nodeId) return;
+    // 距离计费：近端 1 AP，远端 2 AP（无需逐节点步行，可直达任意节点）
+    const dist = nodeDistance(p.nodeId, target.id);
+    const cost = dist <= 1 ? 1 : 2;
+    if (process.env.SMOKE_DEBUG) console.log(`[mv ${(Date.now() % 100000) / 1000}s] ${p.name} ${p.nodeId}->${msg?.nodeId} dist=${dist} ap=${p.ap} phase=${this.state.phase}`);
     const isChair = this.factionOf.get(client.sessionId) === "chair";
-    if (!isChair && p.ap < 1) { this.sendNoticeTo(client.sessionId, "行动值不足，无法移动。"); return; }
+    if (!isChair && p.ap < cost) { this.sendNoticeTo(client.sessionId, `行动值不足（前往${target.name}需 ${cost} AP）。`); return; }
     // 体育馆入场费（5 币；理事长不受任何数值约束，免费）
     if (target.id === "gym" && !isChair) {
       if (p.coins < PRICES.gym) { this.sendNoticeTo(client.sessionId, "体育馆入场费 5 币，你的钱不够。"); return; }
@@ -319,7 +323,7 @@ export class GameRoom extends Room<GameState> {
     const from = p.nodeId;
     p.nodeId = target.id;
     this.subroom.delete(client.sessionId); // 换节点即离开原房间
-    if (!isChair) p.ap -= 1; // 理事长自由活动不耗 AP
+    if (!isChair) p.ap -= cost; // 理事长自由活动不耗 AP
     this.runChecks(client.sessionId, { type: "move", from, to: target.id });
     // R1 单独相处：双向违规（同节点另一性别玩家同样违规）
     if (this.activeRuleIds().includes("R1")) {
@@ -473,6 +477,13 @@ export class GameRoom extends Room<GameState> {
     if (loot.coffee) { p.coffee += loot.coffee; parts.push("咖啡券 ×1"); }
     if (loot.card) { p.cards += loot.card; parts.push("查阅卡 ×1"); }
     if (loot.key) { owned.add(loot.key); p.keys = [...owned].join(","); parts.push(`钥匙（${ROOM_NAMES[loot.key] ?? loot.key}）`); }
+    // 背包物品：约 1/4 概率额外发现一件重要物品/物资（进实体背包）
+    if (Math.random() < 0.25) {
+      const tid = rollTreasure();
+      p.items.set(tid, (p.items.get(tid) ?? 0) + 1);
+      const def = ITEM_CATALOG.find((i) => i.id === tid);
+      if (def) parts.push(`${def.name} ×1`);
+    }
     const roomId = this.subroom.get(client.sessionId) ?? null;
     const scene = exploreText(roomId, p.nodeId, p.san);
     this.sendNoticeTo(client.sessionId, scene + (parts.length ? `\n探索收获：${parts.join("、")}。` : ""));

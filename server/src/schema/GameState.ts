@@ -22,7 +22,8 @@ export class Player extends Schema {
   @type("number") junk = 0;        // 杂物件数
   @type("number") junkValue = 0;   // 杂物总价值（回收站变现）
   @type("number") cards = 0;       // 行政楼查阅卡（M4 影像室用）
-  @type("string") keys = "";       // 社区房间钥匙，逗号分隔：key_office/key_dept/key_cce
+  @type("string") keys = "";       // 社区房间钥匙，逗号分隔：key_office/key_dept/key_cce/key_press
+  @type({ map: "number" }) items = new MapSchema<number>(); // 实体背包：物品目录 id → 数量
 }
 
 export class GameState extends Schema {
@@ -31,6 +32,7 @@ export class GameState extends Schema {
   @type("string") phase: "lobby" | "morning" | "noon" | "afternoon" | "evening" | "night" | "ended" = "lobby";
   @type("number") day = 0;                    // 0..4，Day4 后结算
   @type("number") phaseEndsAt = 0;            // epoch ms，0 = 未计时
+  @type("number") phaseStartedAt = 0;         // 本时段开始 epoch ms（客户端换算虚拟时刻）
   @type("boolean") netDown = false;           // M4：网络中心被破坏，全员失去玩家位置视野
   @type("string") rulesVersion = "v1.4";
 }

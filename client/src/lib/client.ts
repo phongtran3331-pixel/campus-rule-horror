@@ -30,7 +30,7 @@ export const colyseus = new Client(url);
 export type GameRoom = Room<GameState>;
 
 export interface RoomInit {
-  nodes: Array<{ id: string; name: string; x: number; y: number; type: "A" | "B" }>;
+  nodes: Array<{ id: string; name: string; x: number; y: number; type: "A" | "B"; desc: string }>;
   edges: Array<[string, string]>;
   fixedRules: Array<{ id: string; name: string; text: string }>;
   ruleBoard: Array<{ id: string; name: string; text: string }>;

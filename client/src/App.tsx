@@ -2,9 +2,9 @@ import { Component, useEffect, useReducer, useState, type ReactNode } from "reac
 import { colyseus, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleSwapMsg } from "./lib/client";
 import type { Player } from "../../server/src/schema/GameState";
 import { PhaseBanner } from "./components/PhaseBanner";
-import { MapView } from "./components/MapView";
 import { Terminal } from "./components/Terminal";
 import { IntroSequence } from "./components/IntroSequence";
+import { ExploreOverlay } from "./components/ExploreOverlay";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -120,6 +120,7 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
   const [myFaction, setMyFaction] = useState<Faction | null>(null);
   const [chairs, setChairs] = useState<Array<{ id: string; name: string }>>([]);
   const [introDone, setIntroDone] = useState(false);
+  const [exploreOpen, setExploreOpen] = useState(false);
   const [gameover, setGameover] = useState<GameOverMsg | null>(null);
 
   useEffect(() => {
@@ -170,21 +171,8 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
           <p className="sub">{gameover.reason} · 理事长：{gameover.chairs.join("、") || "无"} · 存活干事：{gameover.students.join("、") || "无"}</p>
         </div>
       )}
-      <div className="main">
-        <div className="col left">
-          {init ? (
-            <MapView
-              nodes={init.nodes}
-              edges={init.edges}
-              players={players}
-              myId={room.sessionId}
-              phase={s.phase}
-              netDown={s.netDown}
-              onMove={(nodeId) => room.send("move", { nodeId })}
-            />
-          ) : (
-            <div className="card">等待房主开始…</div>
-          )}
+      <div className="main phone-main">
+        <div className="phone-col">
           {!started && (
             <div className="card waiting">
               <h3>对局房间</h3>
@@ -202,8 +190,6 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
               )}
             </div>
           )}
-        </div>
-        <div className="col right">
           <Terminal
             room={room}
             me={me}
@@ -211,15 +197,29 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
             phase={s.phase}
             day={s.day}
             endsAt={s.phaseEndsAt}
+            startedAt={s.phaseStartedAt}
             netDown={s.netDown}
             players={players}
             msgs={msgs}
             onSendChat={(t) => room.send("chat", { text: t })}
+            onOpenExplore={() => setExploreOpen(true)}
             init={init}
             nodeName={init?.nodes.find((n) => n.id === me?.nodeId)?.name ?? ""}
           />
         </div>
       </div>
+      {started && exploreOpen && init && me && (
+        <ExploreOverlay
+          room={room}
+          nodes={init.nodes}
+          edges={init.edges}
+          me={me}
+          myFaction={myFaction}
+          phase={s.phase}
+          netDown={s.netDown}
+          onClose={() => setExploreOpen(false)}
+        />
+      )}
       <button className="leave" onClick={onLeave}>离开</button>
     </div>
   );

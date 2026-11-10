@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
+import { ITEM_CATALOG, type ItemDef } from "../../../server/src/data/items";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
+import { virtualClock } from "../lib/vtime";
 
 interface Msg { kind: string; from?: string; text: string }
 
@@ -11,18 +13,16 @@ interface Props {
   phase: string;
   day: number;
   endsAt: number;
+  startedAt: number;
   netDown: boolean;
   players: Array<[string, Player]>;
   msgs: Msg[];
   onSendChat: (t: string) => void;
+  onOpenExplore: () => void;
   init: RoomInit | null;
   nodeName: string;
 }
 
-const PHASE_TIME: Record<string, string> = {
-  lobby: "--:--", morning: "08:00", noon: "12:00", afternoon: "14:00",
-  evening: "19:00", night: "22:00", ended: "--:--",
-};
 const PHASE_LABEL: Record<string, string> = {
   lobby: "集合", morning: "上午", noon: "中午", afternoon: "下午",
   evening: "晚上", night: "深夜", ended: "结束",
@@ -42,28 +42,34 @@ type AppId = (typeof APPS)[number]["id"];
 
 export function Terminal(props: Props) {
   const [app, setApp] = useState<AppId | null>(null);
+  const [showStats, setShowStats] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((x) => x + 1), 500);
     return () => clearInterval(t);
   }, []);
 
-  const { me, phase, day, endsAt, nodeName } = props;
+  const { me, phase, day, endsAt, startedAt, nodeName } = props;
   const remain = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
   const clock = `${String(Math.floor(remain / 60)).padStart(2, "0")}:${String(remain % 60).padStart(2, "0")}`;
+  const vtime = virtualClock({ phase: phase as never, phaseStartedAt: startedAt, phaseEndsAt: endsAt });
 
   return (
     <div className="terminal">
-      {/* 状态栏：时间 / 位置 / 信号 */}
+      {/* 状态栏：左时间卡 / 中位置 / 右状态卡 */}
       <div className="t-statusbar">
-        <span>Day {day} · {PHASE_LABEL[phase] ?? phase}</span>
-        <span className="t-vtime">{PHASE_TIME[phase] ?? "--:--"}</span>
+        <button className="t-chip t-time" onClick={() => setApp("tasks")} title="今日日程">
+          <b>{vtime}</b>
+          <span>Day {day} · {PHASE_LABEL[phase] ?? phase}</span>
+        </button>
         <span className="t-pos">📍 {nodeName}</span>
-        <span className="t-net">{props.netDown ? "📵" : "📶"}</span>
+        <button className={`t-chip t-statchip${showStats ? " on" : ""}`} onClick={() => setShowStats((v) => !v)}>
+          {props.netDown ? "📵" : "📶"} 状态
+        </button>
       </div>
 
-      {/* 状态值 */}
-      {me && (
+      {/* 状态面板（点右上「状态」展开） */}
+      {showStats && me && (
         <div className="t-stats">
           <Stat label="HP" v={me.hp} max={100} cls="hp" />
           <Stat label="SAN" v={me.san} max={100} cls="san" />
@@ -77,7 +83,7 @@ export function Terminal(props: Props) {
       <div className="t-screen">
         {app === null ? (
           <>
-            <div className="t-clock">{endsAt > 0 && phase !== "lobby" ? clock : PHASE_TIME[phase]}</div>
+            <div className="t-clock">{endsAt > 0 && phase !== "lobby" ? clock : vtime}</div>
             <div className="t-grid">
               {APPS.map((a) => (
                 <button key={a.id} className="t-app" onClick={() => setApp(a.id)}>
@@ -118,10 +124,9 @@ function Btn({ label, onClick, danger }: { label: string; onClick: () => void; d
 }
 
 function renderApp(app: AppId, p: Props): ReactNode {
-  const { room, me, myFaction, phase, day, netDown, players, msgs, onSendChat, init } = p;
+  const { room, me, myFaction, phase, day, players, msgs, onSendChat, init } = p;
   if (!me) return null;
   const send = (type: string, msg?: unknown) => room.send(type, msg);
-  const busy = phase === "lobby" || phase === "ended";
   const at = me.nodeId;
   const askTarget = (title: string): string | null => {
     const list = players.filter(([, q]) => q.alive);
@@ -132,17 +137,7 @@ function renderApp(app: AppId, p: Props): ReactNode {
 
   switch (app) {
     case "bag":
-      return (
-        <ul className="t-list">
-          <li>食物 ×{me.food}</li>
-          <li>药物 ×{me.medicine}</li>
-          <li>剪刀 ×{me.scissors}</li>
-          <li>咖啡券 ×{me.coffee}</li>
-          <li>杂物 ×{me.junk}（约 {me.junkValue} 币）</li>
-          <li>查阅卡 ×{me.cards}</li>
-          <li>钥匙 ×{me.keys ? me.keys.split(",").filter(Boolean).length : 0}{me.keys ? `（${me.keys}）` : ""}</li>
-        </ul>
-      );
+      return <BagGrid me={me} />;
 
     case "chat":
       return (
@@ -183,30 +178,11 @@ function renderApp(app: AppId, p: Props): ReactNode {
     case "explore":
       return (
         <div className="row wrap">
-          <Btn label="探索（1 AP）" onClick={() => send("explore")} />
-          {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
+          <button className="btn-primary eo-open" onClick={() => p.onOpenExplore()}>打开校园地图</button>
           {me.medicine > 0 && (
             <>
               <Btn label="服药 · 恢复 HP" onClick={() => send("useMedicine", { kind: "hp" })} />
               <Btn label="服药 · 恢复 SAN" onClick={() => send("useMedicine", { kind: "san" })} />
-            </>
-          )}
-          {at === "market" && <Btn label="买食物（5币）" onClick={() => send("buy", { item: "food" })} />}
-          {at === "market" && <Btn label="买剪刀（15币）" onClick={() => send("buy", { item: "scissors" })} />}
-          {at === "clinic" && <Btn label="买药（12币）" onClick={() => send("buyMedicine")} />}
-          {at === "recycle" && me.junk > 0 && <Btn label={`卖杂物（🗑${me.junk}）`} onClick={() => send("recycle")} />}
-          {at === "canteen" && phase === "noon" && <Btn label="午间套餐（3币）" onClick={() => send("meal")} />}
-          {(at === "field" || at === "gym") && <Btn label="运动" onClick={() => send("exercise")} />}
-          {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
-          {at === "admin" && (
-            <>
-              <Btn label="调监控" onClick={() => send("camera")} />
-              <Btn label="调阅设施记录（🪪1）" onClick={() => {
-                const f = window.prompt("设施名：超市售货机 / 校医院药房 / 图书馆闸机 / 操场闸机 / 体育馆闸机 / 社区闸机 / 行政楼影像室 / 网络中心");
-                if (f) send("inspectLog", { facility: f.trim() });
-              }} />
-              {me.scissors > 0 && !netDown && <Btn label="剪网线" danger onClick={() => send("cutNet")} />}
-              {netDown && <Btn label="修复网线（1 AP）" onClick={() => send("repairNet")} />}
             </>
           )}
           <Btn label="私聊 / 转账" onClick={() => {
@@ -298,6 +274,46 @@ function renderApp(app: AppId, p: Props): ReactNode {
       );
     }
   }
+}
+
+/** 实体背包：40 格网格，按物品目录顺序填充 */
+function BagGrid({ me }: { me: Player }) {
+  const [sel, setSel] = useState<ItemDef | null>(null);
+  const countOf = (def: ItemDef): number => {
+    if (def.src === "items") return me.items.get(def.id) ?? 0;
+    if (def.src === "field:junk") return me.junk;
+    if (def.src.startsWith("field:key_")) return me.keys.split(",").filter(Boolean).includes(def.id) ? 1 : 0;
+    const field = def.src.replace("field:", "") as "food" | "medicine" | "scissors" | "coffee" | "cards";
+    return me[field] ?? 0;
+  };
+  const cells = ITEM_CATALOG.map((def) => ({ def, n: countOf(def) }));
+  return (
+    <>
+      <div className="bag-grid">
+        {cells.map(({ def, n }) => (
+          <button
+            key={def.id}
+            className={`bag-slot${n > 0 ? " has" : ""}${sel?.id === def.id ? " sel" : ""}`}
+            disabled={n === 0}
+            onClick={() => setSel(def)}
+          >
+            <span className="bag-icon">{def.icon}</span>
+            {n > 0 && <span className="bag-n">{n}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="bag-detail">
+        {sel ? (
+          <>
+            <b>{sel.name}{countOf(sel) > 0 ? ` ×${countOf(sel)}` : ""}</b>
+            <p>{sel.desc}</p>
+          </>
+        ) : (
+          <p className="t-empty">选择一个物品查看详情。</p>
+        )}
+      </div>
+    </>
+  );
 }
 
 function ChatInput({ onSend }: { onSend: (t: string) => void }) {
