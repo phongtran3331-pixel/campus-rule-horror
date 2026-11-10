@@ -77,23 +77,19 @@
   .mapbox svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .edge { stroke: rgba(230,233,242,.16); stroke-width: .35; stroke-dasharray: 1.4 1.1; }
   .node { cursor: pointer; }
-  .node .halo { fill: transparent; transition: fill .15s; }
-  .node:hover .halo, .node.sel .halo { fill: rgba(232,176,75,.10); }
-  .node.sel .ring { stroke: var(--accent2); stroke-width: .7; }
-  .node-circle { stroke: rgba(0,0,0,.55); stroke-width: .3; transition: r .15s; }
-  .node-circle.A { fill: var(--a); }
-  .node-circle.B { fill: var(--b); }
-  .node:hover .node-circle { r: 3.2; }
-  .node-name {
-    fill: #eef1fa; font-size: 2.6px; text-anchor: middle;
-    paint-order: stroke; stroke: rgba(5,6,10,.85); stroke-width: .55;
-    letter-spacing: .2px; pointer-events: none;
+  .node .node-name {
+    fill: #dfe3ef; font-size: 2.7px; text-anchor: middle;
+    paint-order: stroke; stroke: rgba(5,6,10,.9); stroke-width: .6;
+    letter-spacing: .2px; transition: fill .15s;
   }
-  .node-sub {
-    fill: var(--dim); font-size: 1.9px; text-anchor: middle;
-    paint-order: stroke; stroke: rgba(5,6,10,.85); stroke-width: .5;
-    pointer-events: none;
+  .node .node-sub {
+    fill: #7d8499; font-size: 1.8px; text-anchor: middle;
+    paint-order: stroke; stroke: rgba(5,6,10,.9); stroke-width: .5;
+    opacity: 0; transition: opacity .15s;
   }
+  .node:hover .node-name, .node.sel .node-name { fill: #e8b04b; }
+  .node:hover .node-sub, .node.sel .node-sub { opacity: 1; }
+  .node.sel .node-name { font-weight: 700; }
   .crumb {
     position: absolute; left: 12px; top: 12px; z-index: 5;
     display: flex; gap: 8px; align-items: center;
@@ -376,11 +372,9 @@ function drawMap() {
     g.setAttribute("class","node"+(sel===n.id?" sel":""));
     const sub = DETAIL[n.id].rooms.length;
     g.innerHTML = `
-      <circle class="halo" cx="${n.x}" cy="${n.y}" r="6.5"></circle>
-      <circle class="ring" cx="${n.x}" cy="${n.y}" r="4" fill="none"></circle>
-      <circle class="node-circle ${n.type}" cx="${n.x}" cy="${n.y}" r="2.6"></circle>
-      <text class="node-name" x="${n.x}" y="${n.y-3.6}">${n.name}</text>
-      <text class="node-sub" x="${n.x}" y="${n.y+5.2}">${n.type==="A"?sub+" 房间":"开放"}</text>`;
+      <rect x="${n.x-8}" y="${n.y-4}" width="16" height="8" fill="transparent"></rect>
+      <text class="node-name" x="${n.x}" y="${n.y}">${n.name}</text>
+      <text class="node-sub" x="${n.x}" y="${n.y+3.4}">${n.type==="A"?sub+" 房间":"开放"}</text>`;
     g.addEventListener("click",()=>select(n.id));
     svg.appendChild(g);
   });
@@ -405,7 +399,7 @@ function roomCard(r) {
   const c = KINDS[r.kind] || "#94a3b8";
   return `<div class="room ${r.none?"none":""}" data-rid="${r.id}">
     ${r.none?"":`<span class="kdot" style="background:${c};box-shadow:0 0 6px ${c}"></span>`}
-    <div class="rn">${r.name}</div><div class="rk">${r.kind}</div></div>`;
+    <div class="rn">${r.name}</div></div>`;
 }
 
 function renderPanel() {
