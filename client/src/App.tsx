@@ -135,6 +135,15 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
   }, [room]);
 
   const s = room.state;
+  // 状态同步到达前的首帧渲染保护（网络延迟时 state/players 尚未就绪）
+  if (!s || !(s as { players?: unknown }).players) {
+    return (
+      <div className="game">
+        <PhaseBanner day={0} phase="lobby" endsAt={0} />
+        <div className="card" style={{ marginTop: 10 }}>正在进入校园…</div>
+      </div>
+    );
+  }
   const me = s.players.get(room.sessionId) as Player | undefined;
   const players = [...s.players.entries()] as Array<[string, Player]>;
   const isHost = room.sessionId === s.hostId;
