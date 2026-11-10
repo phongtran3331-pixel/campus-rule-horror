@@ -24,7 +24,7 @@ export function MapView({ nodes, edges, players, myId, phase, netDown, onMove }:
     <div className={`card map ${netDown ? "netdown" : ""}`}>
       <img
         className="map-bg"
-        src={isNight ? "/assets/map-evening.jpg" : "/assets/map-day.jpg"}
+        src={isNight ? "assets/map-evening.jpg" : "assets/map-day.jpg"}
         alt="校园地图"
         draggable={false}
       />
