@@ -1,0 +1,5 @@
+name: test
+url: ${{ steps.deployment.outputs.page_url }}
+run: |
+  npm run build 2>&1 | tee build-output.log
+  test "${PIPESTATUS[0]}" -eq 0
