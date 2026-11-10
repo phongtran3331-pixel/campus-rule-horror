@@ -28,7 +28,7 @@ jobs:
       - name: Build client
         env:
           GH_PAGES: "1"
-          VITE_SERVER_URL: "ws://113.44.183.22:2567"
+          VITE_SERVER_URL: "wss://tag-illinois-typically-chris.trycloudflare.com"
         run: npm run build -w client
       - name: Assemble site (portal + game)
         run: |

@@ -175,7 +175,7 @@
 
   <footer>
     校园规则怪谈：自管委 · 多人联机规则怪谈生存游戏<br>
-    服务端地址 ws://113.44.183.22:2567 · 客户端由 GitHub Pages 托管
+    经 Cloudflare 隧道加密接入 · 客户端由 GitHub Pages 托管
   </footer>
 </div>
 
@@ -184,7 +184,7 @@
     const dot = document.getElementById('dot');
     const text = document.getElementById('statusText');
     try {
-      const r = await fetch('http://113.44.183.22:2567/healthz', { cache: 'no-store' });
+      const r = await fetch('https://tag-illinois-typically-chris.trycloudflare.com/healthz', { cache: 'no-store' });
       const j = await r.json();
       if (j.ok) {
         dot.classList.add('on');
