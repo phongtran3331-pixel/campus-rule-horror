@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
 import { MapView } from "./MapView";
@@ -45,6 +45,15 @@ function Btn({ label, onClick, danger, disabled }: { label: string; onClick: () 
 export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDown, onClose }: Props) {
   const [selected, setSelected] = useState<string>(me.nodeId);
   const [view, setView] = useState<string | null>(null); // null = 地图；否则为节点界面 id
+  // 位置被系统改动（如午间自动前往食堂）时，同步刷新选中项与节点界面
+  const prevNode = useRef(me.nodeId);
+  useEffect(() => {
+    if (prevNode.current !== me.nodeId) {
+      setSelected((cur) => (cur === prevNode.current ? me.nodeId : cur));
+      setView((cur) => (cur === prevNode.current ? null : cur));
+      prevNode.current = me.nodeId;
+    }
+  }, [me.nodeId]);
   const node = nodes.find((n) => n.id === (view ?? selected))!;
   const send = (type: string, msg?: unknown) => room.send(type, msg);
   const isChair = myFaction === "chair";
