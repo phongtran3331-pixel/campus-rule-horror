@@ -14,7 +14,7 @@ interface Props {
 /** 节点动作面板：根据当前所在节点与时段给出可用操作（M3/M4 功能入口） */
 export function ActionPanel({ room, me, myFaction, phase, day, netDown, players }: Props) {
   if (!me || !me.alive) return null;
-  const send = room.send;
+  const send = (type: string, msg?: unknown) => room.send(type, msg);
   const at = me.nodeId;
   const busy = phase === "lobby" || phase === "ended";
   const Btn = ({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) => (
