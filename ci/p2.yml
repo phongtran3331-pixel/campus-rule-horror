@@ -1,2 +1,0 @@
-      - if: failure()
-        run: tail -n 15 build-output.log | while read l; do echo "::error::$l"; done
