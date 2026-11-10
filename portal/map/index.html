@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园地图 · 节点检查</title>
+<style>
+  :root {
+    --bg: #0a0c12;
+    --panel: #12151f;
+    --panel2: #171b28;
+    --line: #262b3d;
+    --text: #e6e9f2;
+    --dim: #8a91a8;
+    --accent: #d33f2e;
+    --accent2: #e8b04b;
+    --ok: #4ade80;
+    --a: #e8b04b;   /* A 类节点 */
+    --b: #5b8dd9;   /* B 类节点 */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: ""; position: fixed; inset: -50%;
+    background:
+      radial-gradient(ellipse 40% 30% at 20% 30%, rgba(120,140,200,.05), transparent 60%),
+      radial-gradient(ellipse 50% 35% at 80% 60%, rgba(120,140,200,.04), transparent 60%);
+    animation: fog 26s linear infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes fog {
+    from { transform: translate3d(-3%,-2%,0) scale(1); }
+    to   { transform: translate3d(3%,2%,0) scale(1.06); }
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 22px;
+    background: rgba(10,12,18,.88); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar h1 { font-size: 18px; letter-spacing: 4px; }
+  .topbar h1 a { color: inherit; text-decoration: none; }
+  .topbar h1 a:hover { color: var(--accent2); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--dim); border: 0; cursor: pointer;
+    padding: 7px 16px; font-size: 13px; letter-spacing: 1px;
+    font-family: inherit; transition: all .15s;
+  }
+  .seg button.on { background: var(--panel2); color: var(--text); }
+  .legend { margin-left: auto; display: flex; gap: 16px; font-size: 12px; color: var(--dim); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .legend .la i { background: var(--a); }
+  .legend .lb i { background: var(--b); }
+
+  .layout {
+    display: grid; grid-template-columns: minmax(0,1.5fr) minmax(320px,1fr);
+    gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto;
+    position: relative; z-index: 1;
+  }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ---------- 地图 ---------- */
+  .mapbox {
+    position: relative; border: 1px solid var(--line); border-radius: 16px;
+    overflow: hidden; background: var(--panel);
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .mapbox img.bg { width: 100%; display: block; user-select: none; }
+  .mapbox svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .edge { stroke: rgba(230,233,242,.16); stroke-width: .35; stroke-dasharray: 1.4 1.1; }
+  .node { cursor: pointer; }
+  .node .halo { fill: transparent; transition: fill .15s; }
+  .node:hover .halo, .node.sel .halo { fill: rgba(232,176,75,.10); }
+  .node.sel .ring { stroke: var(--accent2); stroke-width: .7; }
+  .node-circle { stroke: rgba(0,0,0,.55); stroke-width: .3; transition: r .15s; }
+  .node-circle.A { fill: var(--a); }
+  .node-circle.B { fill: var(--b); }
+  .node:hover .node-circle { r: 3.2; }
+  .node-name {
+    fill: #eef1fa; font-size: 2.6px; text-anchor: middle;
+    paint-order: stroke; stroke: rgba(5,6,10,.85); stroke-width: .55;
+    letter-spacing: .2px; pointer-events: none;
+  }
+  .node-sub {
+    fill: var(--dim); font-size: 1.9px; text-anchor: middle;
+    paint-order: stroke; stroke: rgba(5,6,10,.85); stroke-width: .5;
+    pointer-events: none;
+  }
+  .crumb {
+    position: absolute; left: 12px; top: 12px; z-index: 5;
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(10,12,18,.82); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--dim);
+  }
+  .crumb b { color: var(--text); font-weight: 600; }
+  .crumb button {
+    background: none; border: 0; color: var(--accent2); cursor: pointer;
+    font-family: inherit; font-size: 12px; padding: 0;
+  }
+  .crumb button:hover { text-decoration: underline; }
+
+  /* ---------- 侧栏 ---------- */
+  .panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .card h2 { font-size: 16px; letter-spacing: 2px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; letter-spacing: 1px; border-radius: 5px; padding: 2px 8px;
+    border: 1px solid;
+  }
+  .badge.A { color: var(--a); border-color: rgba(232,176,75,.45); }
+  .badge.B { color: var(--b); border-color: rgba(91,141,217,.45); }
+  .meta { margin-top: 12px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+  .meta dt { color: var(--dim); white-space: nowrap; }
+  .meta dd { color: var(--text); line-height: 1.7; }
+  .rooms { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+  .room {
+    position: relative; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel2); padding: 12px 10px 10px; cursor: pointer;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+    text-align: center;
+  }
+  .room:hover { transform: translateY(-3px); border-color: rgba(232,176,75,.5); box-shadow: 0 10px 24px rgba(0,0,0,.4); }
+  .room .rn { font-size: 14px; font-weight: 600; letter-spacing: 1px; }
+  .room .rk { margin-top: 6px; font-size: 11px; color: var(--dim); }
+  .room .kdot { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; }
+  .room.none { border-style: dashed; opacity: .45; cursor: not-allowed; }
+  .room.none:hover { transform: none; border-color: var(--line); box-shadow: none; }
+  .room.none .rn { color: var(--dim); }
+
+  .floors { display: flex; gap: 6px; margin: 14px 0 4px; flex-wrap: wrap; }
+  .floors button {
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 13px; cursor: pointer; font-family: inherit; font-size: 12px;
+  }
+  .floors button.on { color: var(--text); border-color: var(--accent2); }
+  .hintline { font-size: 12px; color: var(--dim); margin-top: 12px; line-height: 1.8; }
+
+  /* 房间详情浮层 */
+  .modal-mask {
+    position: fixed; inset: 0; z-index: 50; background: rgba(4,5,9,.66);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+    backdrop-filter: blur(3px);
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    width: min(480px, 100%); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 16px; padding: 26px 26px 22px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    animation: pop .18s ease;
+  }
+  @keyframes pop { from { transform: translateY(10px) scale(.98); opacity: 0; } }
+  .modal h3 { font-size: 19px; letter-spacing: 2px; display: flex; align-items: center; gap: 10px; }
+  .modal .where { margin-top: 6px; font-size: 12px; color: var(--dim); }
+  .modal .desc { margin-top: 14px; font-size: 13.5px; line-height: 2; color: var(--text); }
+  .modal .tags { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .modal .tags span {
+    font-size: 11px; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 999px; padding: 3px 11px; letter-spacing: 1px;
+  }
+  .modal .close {
+    margin-top: 20px; width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px; cursor: pointer;
+    font-family: inherit; font-size: 13px; letter-spacing: 3px;
+  }
+  .modal .close:hover { border-color: var(--accent2); color: var(--accent2); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1><a href="../">‹ 校园规则怪谈</a> / 校园地图</h1>
+  <div class="seg" id="timeSeg">
+    <button data-t="day" class="on">白天</button>
+    <button data-t="evening">夜晚</button>
+  </div>
+  <div class="legend">
+    <span class="la"><i></i>A 类·有子房间</span>
+    <span class="lb"><i></i>B 类·开放空间</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 左：地图 -->
+  <div class="mapbox" id="mapbox">
+    <img class="bg" id="mapBg" src="../assets/map-day.jpg" alt="校园地图" draggable="false">
+    <svg id="mapSvg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <div class="crumb" id="crumb" hidden>
+      <button id="crumbBack">‹ 返回全图</button><span>/</span><b id="crumbHere"></b>
+    </div>
+  </div>
+
+  <!-- 右：信息面板 -->
+  <div class="panel" id="panel"></div>
+</div>
+
+<!-- 房间详情 -->
+<div class="modal-mask" id="mask">
+  <div class="modal">
+    <h3 id="mTitle"></h3>
+    <div class="where" id="mWhere"></div>
+    <div class="desc" id="mDesc"></div>
+    <div class="tags" id="mTags"></div>
+    <button class="close" id="mClose">关 闭</button>
+  </div>
+</div>
+
+<script>
+/* ================= 数据（与 server/src/data/map.ts 对齐） ================= */
+const NODES = [
+  { id:"dorm",      name:"宿舍",     x:13, y:51, type:"B" },
+  { id:"canteen",   name:"食堂",     x:44, y:37, type:"B" },
+  { id:"clinic",    name:"校医院",   x:94, y:59, type:"B" },
+  { id:"market",    name:"超市",     x:68, y:70, type:"B" },
+  { id:"tA",        name:"教学楼A",  x:66, y:29, type:"A" },
+  { id:"tB",        name:"教学楼B",  x:77, y:24, type:"A" },
+  { id:"tC",        name:"教学楼C",  x:81, y:31, type:"A" },
+  { id:"library",   name:"图书馆",   x:39, y:71, type:"A" },
+  { id:"field",     name:"操场",     x:24, y:26, type:"B" },
+  { id:"community", name:"学生社区", x:46, y:12, type:"A" },
+  { id:"recycle",   name:"回收站",   x:11, y:18, type:"B" },
+  { id:"gym",       name:"体育馆",   x:28, y:9,  type:"A" },
+  { id:"admin",     name:"行政楼",   x:69, y:53, type:"A" },
+  { id:"gate",      name:"学校大门", x:45, y:84, type:"B" },
+];
+const EDGES = [
+  ["dorm","canteen"],["dorm","community"],["dorm","library"],["dorm","field"],["dorm","recycle"],
+  ["field","gym"],["field","canteen"],["recycle","gym"],["recycle","community"],
+  ["community","canteen"],["community","tA"],
+  ["canteen","library"],["canteen","market"],["canteen","gate"],["canteen","tA"],
+  ["market","library"],["market","gate"],["market","clinic"],
+  ["tA","tB"],["tB","tC"],["tA","admin"],["tA","library"],["tC","admin"],["tC","clinic"],
+  ["admin","gate"],["admin","clinic"],["admin","library"],["library","gate"],
+];
+
+/* 房间类型 → 圆点颜色 */
+const KINDS = {
+  "功能":"#4ade80", "物资":"#e8b04b", "上课":"#5b8dd9",
+  "幻觉":"#d33f2e", "挑战":"#c084fc", "交易":"#38bdf8", "安全":"#94a3b8",
+};
+
+/* ---- 教学楼：大厅 + 4 层 × 4 间；404 不存在（F6）；上课教室按日轮换（F2） ---- */
+function teachingRooms(bid, bname) {
+  const rooms = [{ id:bid+":hall", name:"一楼大厅", kind:"功能",
+    desc:"进入教学楼默认位于大厅。同楼玩家名单在此处可见——他们的具体房间号也一清二楚。" }];
+  const inSession = { tA:["201","303"], tB:["202"], tC:["301"] }; // Day 1 示例
+  for (let f=1; f<=4; f++) {
+    for (let i=1; i<=4; i++) {
+      const no = f*100+i;
+      if (no === 404) {
+        rooms.push({ id:bid+":404", name:"404", kind:"幻觉", none:true,
+          desc:"不存在的教室。门牌会出现在走廊尽头，SAN 越低越逼真。进入即违反 F6。" });
+        continue;
+      }
+      const kind = inSession[bid].includes(String(no)) ? "上课" : (f===4 ? "幻觉" : "物资");
+      rooms.push({ id:bid+":"+no, name:String(no), kind,
+        desc: kind==="上课"
+          ? "今日有课。门缝透出灯光与板书声，进入即打扰教学（F2，当场 HP−10 SAN−10）。"
+          : kind==="幻觉"
+          ? "空教室。桌椅蒙尘，但总觉得有人刚离开。探索可得笔记与杂物，SAN 低时此处会发生怪事。"
+          : "普通教室。课桌抽屉里可能有上一届留下的笔记与杂物。" });
+    }
+  }
+  return rooms;
+}
+
+/* ---- 各节点子位置 / 功能点 ---- */
+const DETAIL = {
+  dorm: { ap:"睡觉 2 AP", out:"—", risk:"低（安全区）", tone:"门牌确认（R12）、空床起伏",
+    rooms:[
+      { id:"dorm:bed",  name:"寝室床位", kind:"功能", desc:"睡觉：2 AP、黑屏 2 小时（同步时间），SAN +20，期间饥饿消耗 ×2。" },
+      { id:"dorm:door", name:"门牌",     kind:"功能", desc:"每日回到宿舍后确认门牌号（R12）。门牌号不会自己变——但幻觉会。" },
+      { id:"dorm:wash", name:"盥洗室",   kind:"幻觉", desc:"镜子里的你慢了一拍才跟着抬头。" },
+    ]},
+  canteen: { ap:"进餐 ~3 币", out:"便宜食物、咖啡券", risk:"低", tone:"四号窗口（R9）、拼桌、菜里的硬物",
+    rooms:[
+      { id:"canteen:win4", name:"四号窗口", kind:"幻觉", desc:"永远排着队，但没人记得自己买过什么。" },
+      { id:"canteen:table",name:"餐桌区",   kind:"功能", desc:"午间讨论与投票所在地。拼桌是情报来源，也是风险。" },
+      { id:"canteen:kitchen",name:"后厨",   kind:"物资", desc:"咖啡券偶尔会从推车缝里掉出来。" },
+    ]},
+  clinic: { ap:"2 AP", out:"药物（急救包/镇定剂）、校医任务", risk:"无", tone:"换药、体检单",
+    rooms:[
+      { id:"clinic:pharm", name:"药房",   kind:"交易", desc:"急救包（HP+25）与镇定剂（SAN+25），各 40 币。" },
+      { id:"clinic:infuse",name:"输液区", kind:"幻觉", desc:"输液架上挂着的袋子，标签是你的名字。" },
+      { id:"clinic:doctor",name:"校医室", kind:"功能", desc:"校医 NPC：交重要物品换报酬，或触发换药事件。" },
+    ]},
+  market: { ap:"2 AP", out:"食物、剪刀（30币）、咖啡券", risk:"低", tone:"老板娘 NPC（R6）、自动售货机记录",
+    rooms:[
+      { id:"market:shelf", name:"货架区",     kind:"交易", desc:"零食 +15~25 饥饿；剪刀 30 币（破坏网络中心用）；咖啡券 5 币。" },
+      { id:"market:auto",  name:"自动售货机", kind:"功能", desc:"购买记录可被持查阅卡者在终端调阅（只有时间与次数，没有姓名）。" },
+      { id:"market:cash",  name:"收银台",     kind:"功能", desc:"老板娘 NPC 在此。交易、情报与\"食物有问题\"的传闻都从这里开始。" },
+    ]},
+  tA: { ap:"3 AP", out:"笔记(中)、杂物", risk:"中", tone:"幻觉教室、上课铃", rooms: teachingRooms("tA","教学楼A") },
+  tB: { ap:"3 AP", out:"笔记(中)、杂物", risk:"中", tone:"上课铃",           rooms: teachingRooms("tB","教学楼B") },
+  tC: { ap:"3 AP", out:"笔记(中)、杂物", risk:"高", tone:"尽头的阶梯教室、多出来的电梯",
+       rooms: teachingRooms("tC","教学楼C") },
+  library: { ap:"3 AP", out:"笔记(高)", risk:"中", tone:"写着你名字的书架、闸机记录",
+    rooms:[
+      { id:"library:hall",  name:"大厅",   kind:"功能", desc:"进入默认位置。闸机进出记录可被机器查阅。" },
+      { id:"library:read",  name:"阅览室", kind:"物资", desc:"高质量笔记的主要来源。安静得能听见翻页声——和你翻页的节奏不一样的那份，是别人在看。" },
+      { id:"library:stack", name:"书库区", kind:"幻觉", desc:"书架深处有一格贴着你的名字。抽出来，是一本空白的书。" },
+      { id:"library:study", name:"自习区", kind:"挑战", desc:"桌上的卷子做到最后一题，题目是\"现在还有几个人活着\"。" },
+    ]},
+  field: { ap:"运动：耗饥饿", out:"—", risk:"低", tone:"夜跑者、红校服（R9）、闸机记录",
+    rooms:[
+      { id:"field:track",  name:"跑道",   kind:"功能", desc:"运动：HP+5、SAN+8，消耗饥饿值。夜跑者的背影总在第三圈消失。" },
+      { id:"field:stand",  name:"看台",   kind:"物资", desc:"遗失的水杯与杂物。看台的影子比你多一个。" },
+      { id:"field:corner", name:"器材角", kind:"物资", desc:"跳绳、秒表，回收价值一般。" },
+    ]},
+  community: { ap:"预约制", out:"钥匙、档案、破译、表彰、担保", risk:"中", tone:"闸机进出记录",
+    rooms:[
+      { id:"community:front", name:"前台", kind:"功能", desc:"只负责闸机进出（记录可被机器查阅）。进出均需预约，每段≤3 人，每人每天 1 段。" },
+      { id:"community:office",name:"办公室", kind:"功能", desc:"需钥匙。档案 ×1：验 2 人是否同阵营。每日全图仅 1 份，Day 1 起须预约进入。" },
+      { id:"community:dept",  name:"社区部", kind:"功能", desc:"需钥匙。查看昨日社区预约与出入时间线。" },
+      { id:"community:cce",   name:"策创部", kind:"功能", desc:"需钥匙。抹除 1 条随机规矩（理事长无提示），每人每局限 1 次。" },
+      { id:"community:press", name:"宣传部", kind:"功能", desc:"需钥匙。校园墙匿名发帖：破译规则 / 三好学生表彰 / 匿名担保。每人每天 1 条。" },
+      { id:"community:cafe",  name:"时光里的咖啡屋", kind:"交易", desc:"凭咖啡券。50 HP 或 30 SAN，每日限 1 杯。老板娘从不看价目表——她看的是你。" },
+    ]},
+  recycle: { ap:"1 AP", out:"杂物换币（3–8 币/件）", risk:"无", tone:"回收站大爷 NPC、秤",
+    rooms:[
+      { id:"recycle:desk", name:"回收柜台", kind:"交易", desc:"大爷的秤永远少二两。杂物在此换成货币。" },
+      { id:"recycle:pile", name:"杂物堆",   kind:"物资", desc:"别人丢掉的，也许是你要找的。探索消耗 1 AP。" },
+    ]},
+  gym: { ap:"付费 10 币 + 运动", out:"体育运动物资（回收价值高）、杠铃杆", risk:"中", tone:"深夜的球场、消失的更衣柜",
+    rooms:[
+      { id:"gym:front",  name:"前台",   kind:"交易", desc:"付费 10 币进入。杠铃杆在此可寻得——它同时是破坏工具与危险品（F4）。" },
+      { id:"gym:machine",name:"器械区", kind:"功能", desc:"运动：HP+12、SAN+10，概率得体育物资。携带体育物资时饥饿加速下降。" },
+      { id:"gym:court",  name:"球场",   kind:"挑战", desc:"深夜灯自己亮着，场中央的篮球在拍自己。" },
+      { id:"gym:locker", name:"储物间", kind:"幻觉", desc:"你的柜门编号变成了 13。打开或换柜，是个选择。" },
+    ]},
+  admin: { ap:"3 AP", out:"查阅卡、监控、网络中心", risk:"中", tone:"影像室、文印室",
+    rooms:[
+      { id:"admin:hall",    name:"大厅",   kind:"功能", desc:"进入默认位置。HP>80 者进入即违规（R7）。" },
+      { id:"admin:camera",  name:"影像室", kind:"功能", desc:"监控：干事每日 3 次查全图节点级位置（理事长不限次）；双方查询均留痕——超量使用可反推理事长。" },
+      { id:"admin:net",     name:"网络中心", kind:"功能", desc:"剪网线（剪刀 1.5 min）/ 杠铃杆破坏（4 min）；修复 1 AP，断网半天（4 min）自动恢复。断网时全员失去视野。" },
+      { id:"admin:print",   name:"文印室", kind:"功能", desc:"查阅卡产出地：每日 1 张，先到先得，持久可交易。复印机偶尔会印出写满你名字的纸。" },
+    ]},
+  gate: { ap:"2 AP", out:"杂物、重要物品", risk:"低", tone:"门卫 NPC；永远打不开的门",
+    rooms:[
+      { id:"gate:guard", name:"门卫室", kind:"功能", desc:"\"今天没有请假单。\"他从来不说第二句话。交重要物品可换报酬。" },
+      { id:"gate:bar",   name:"闸机",   kind:"幻觉", desc:"门把手是湿的。试图出门需要 SAN 判定。" },
+      { id:"gate:board", name:"告示栏", kind:"物资", desc:"贴满通报与处分决定。其中一张的日期是明天。" },
+    ]},
+};
+
+/* ================= 渲染 ================= */
+const svg = document.getElementById("mapSvg");
+const panel = document.getElementById("panel");
+const crumb = document.getElementById("crumb");
+let sel = null, inNode = null, floor = 1;
+
+function nodeById(id){ return NODES.find(n=>n.id===id); }
+
+function drawMap() {
+  svg.innerHTML = "";
+  const pos = Object.fromEntries(NODES.map(n=>[n.id,n]));
+  EDGES.forEach(([a,b])=>{
+    const l = document.createElementNS("http://www.w3.org/2000/svg","line");
+    l.setAttribute("x1",pos[a].x); l.setAttribute("y1",pos[a].y);
+    l.setAttribute("x2",pos[b].x); l.setAttribute("y2",pos[b].y);
+    l.setAttribute("class","edge");
+    svg.appendChild(l);
+  });
+  NODES.forEach(n=>{
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class","node"+(sel===n.id?" sel":""));
+    const sub = DETAIL[n.id].rooms.length;
+    g.innerHTML = `
+      <circle class="halo" cx="${n.x}" cy="${n.y}" r="6.5"></circle>
+      <circle class="ring" cx="${n.x}" cy="${n.y}" r="4" fill="none"></circle>
+      <circle class="node-circle ${n.type}" cx="${n.x}" cy="${n.y}" r="2.6"></circle>
+      <text class="node-name" x="${n.x}" y="${n.y-3.6}">${n.name}</text>
+      <text class="node-sub" x="${n.x}" y="${n.y+5.2}">${n.type==="A"?sub+" 房间":"开放"}</text>`;
+    g.addEventListener("click",()=>select(n.id));
+    svg.appendChild(g);
+  });
+}
+
+function select(id) {
+  sel = id; inNode = null; floor = 1;
+  crumb.hidden = true;
+  drawMap(); renderPanel();
+}
+
+function enterNode(id) {
+  inNode = id; floor = 1;
+  crumb.hidden = false;
+  document.getElementById("crumbHere").textContent = nodeById(id).name + " · 内部";
+  renderPanel();
+}
+
+document.getElementById("crumbBack").onclick = () => { select(sel); };
+
+function roomCard(r) {
+  const c = KINDS[r.kind] || "#94a3b8";
+  return `<div class="room ${r.none?"none":""}" data-rid="${r.id}">
+    ${r.none?"":`<span class="kdot" style="background:${c};box-shadow:0 0 6px ${c}"></span>`}
+    <div class="rn">${r.name}</div><div class="rk">${r.kind}</div></div>`;
+}
+
+function renderPanel() {
+  const n = nodeById(sel);
+  if (!n) { panel.innerHTML = `<div class="card"><h2>校园地图</h2>
+    <p class="hintline">点击地图上的节点查看详情；A 类节点可"进入"查看子房间结构。本页仅供检查节点功能，不触发任何事件。</p></div>`; return; }
+  const d = DETAIL[n.id];
+  let inner = "";
+
+  if (!inNode) {
+    inner = `<div class="card">
+      <h2>${n.name} <span class="badge ${n.type}">${n.type==="A"?"A 类 · 有子房间":"B 类 · 开放空间"}</span></h2>
+      <dl class="meta">
+        <dt>探索消耗</dt><dd>${d.ap}</dd>
+        <dt>主要产出</dt><dd>${d.out}</dd>
+        <dt>风险</dt><dd>${d.risk}</dd>
+        <dt>基调</dt><dd>${d.tone}</dd>
+      </dl>
+      <div class="rooms">${d.rooms.map(roomCard).join("")}</div>
+      <p class="hintline">点击房间查看说明；${n.type==="A"?"已进入节点内部视角":"B 类节点无独立房间，以上为功能点"}。</p>
+    </div>`;
+  } else {
+    const rooms = d.rooms;
+    const isTeaching = /^t[ABC]$/.test(n.id);
+    let list = rooms;
+    if (isTeaching) {
+      const hall = rooms.filter(r=>r.id.endsWith(":hall"));
+      const floorRooms = rooms.filter(r=>!r.id.endsWith(":hall") && Number(r.id.split(":")[1][0])===floor);
+      list = [...hall, ...floorRooms];
+    }
+    inner = `<div class="card">
+      <h2>${n.name} <span class="badge A">内部结构</span></h2>
+      ${isTeaching?`<div class="floors">${[1,2,3,4].map(f=>
+        `<button data-f="${f}" class="${f===floor?"on":""}">${f} 层</button>`).join("")}</div>`:""}
+      <div class="rooms">${list.map(roomCard).join("")}</div>
+      <p class="hintline">共 ${rooms.length} 个子位置（含大厅）。黄色=功能，蓝=上课，红=幻觉，紫=挑战，青=交易。</p>
+    </div>`;
+  }
+  panel.innerHTML = inner;
+
+  panel.querySelectorAll(".room:not(.none)").forEach(el=>{
+    el.onclick = () => showRoom(el.dataset.rid);
+  });
+  panel.querySelectorAll(".floors button").forEach(b=>{
+    b.onclick = () => { floor = Number(b.dataset.f); renderPanel(); };
+  });
+}
+
+function showRoom(rid) {
+  const all = Object.values(DETAIL).flatMap(d=>d.rooms);
+  const r = all.find(x=>x.id===rid);
+  if (!r) return;
+  const nid = rid.split(":")[0];
+  document.getElementById("mTitle").innerHTML =
+    `${r.name} <span class="badge" style="color:${KINDS[r.kind]};border-color:${KINDS[r.kind]}55">${r.kind}</span>`;
+  document.getElementById("mWhere").textContent = nodeById(nid).name + " · 子位置 " + rid;
+  document.getElementById("mDesc").textContent = r.desc;
+  document.getElementById("mTags").innerHTML = ["节点检查模式", "不触发事件", "坐标已校准"]
+    .map(t=>`<span>${t}</span>`).join("");
+  document.getElementById("mask").classList.add("show");
+}
+document.getElementById("mClose").onclick = () =>
+  document.getElementById("mask").classList.remove("show");
+document.getElementById("mask").addEventListener("click", e=>{
+  if (e.target.id==="mask") e.target.classList.remove("show");
+});
+
+/* 日夜切换 */
+document.getElementById("timeSeg").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#timeSeg button").forEach(x=>x.classList.toggle("on",x===b));
+  document.getElementById("mapBg").src = b.dataset.t==="day"
+    ? "../assets/map-day.jpg" : "../assets/map-evening.jpg";
+});
+
+drawMap();
+renderPanel();
+</script>
+</body>
+</html>
