@@ -6,3 +6,6 @@ build/
 manual/build/
 .DS_Store
 __pycache__/
+
+# 本地 CI 复现目录
+.ci-repro/
