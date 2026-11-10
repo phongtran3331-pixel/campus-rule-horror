@@ -1,0 +1,15 @@
+        env:
+          GH_PAGES: "1"
+        run: npm run build -w client 2>&1 | tee build-output.log; test "${PIPESTATUS[0]}" -eq 0
+      - if: failure()
+        run: tail -n 15 build-output.log | while read l; do echo "::error::$l"; done
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
