@@ -19,6 +19,7 @@ interface JoinOptions {
   name?: string;
   gender?: string;
   timeScale?: number;
+  debug?: boolean; // 调试房：房主可无视人数直接开局
 }
 
 const DAY_TOTAL = 4; // 0..4，Day4 中午终投后直接结算
@@ -33,6 +34,7 @@ export class GameRoom extends Room<GameState> {
   maxClients = 12; // 9–12 人局
   private timer!: PhaseTimer;
   private timeScale = 1;
+  private debugMode = false; // 调试房：房主可直接开局
 
   // ---------- 服务端私有数据（规则引擎状态，均不同步） ----------
   private factionOf = new Map<string, Faction>();          // 阵营（机密）
@@ -59,6 +61,7 @@ export class GameRoom extends Room<GameState> {
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
     this.timeScale = options.timeScale ?? 1;
+    this.debugMode = !!options.debug;
     this.timer = new PhaseTimer(this.timeScale);
 
     this.onMessage("start", (client) => this.startGame(client));
@@ -135,7 +138,7 @@ export class GameRoom extends Room<GameState> {
   private startGame(client: Client) {
     if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
     const ids = [...this.state.players.keys()];
-    if (ids.length < 5) return;
+    if (ids.length < 5 && !this.debugMode) return;
 
     // 阵营分配：≥9 人 3 理事长，5–8 人 2 理事长（7:3 体验局见沙盘推演报告附 3）
     const nChair = ids.length >= 9 ? 3 : 2;

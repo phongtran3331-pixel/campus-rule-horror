@@ -1,13 +1,10 @@
 import { Component, useEffect, useReducer, useState, type ReactNode } from "react";
 import { colyseus, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleSwapMsg } from "./lib/client";
 import type { Player } from "../../server/src/schema/GameState";
-import { TopBar } from "./components/TopBar";
 import { PhaseBanner } from "./components/PhaseBanner";
 import { MapView } from "./components/MapView";
-import { RuleBoard } from "./components/RuleBoard";
-import { PlayerList } from "./components/PlayerList";
-import { ChatPanel } from "./components/ChatPanel";
-import { ActionPanel } from "./components/ActionPanel";
+import { Terminal } from "./components/Terminal";
+import { IntroSequence } from "./components/IntroSequence";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -30,36 +27,39 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
+  const [debugRoom, setDebugRoom] = useState(false);
+  const enter = (r: GameRoom, debug: boolean) => { setDebugRoom(debug); setRoom(r); };
   return (
     <ErrorBoundary>
-      {room ? <GameScreen room={room} onLeave={() => setRoom(null)} /> : <Lobby onEnter={setRoom} />}
+      {room ? <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} /> : <Lobby onEnter={enter} />}
     </ErrorBoundary>
   );
 }
 
 // ---------- 大厅 ----------
 
-function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
+function Lobby({ onEnter }: { onEnter: (r: GameRoom, debug: boolean) => void }) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"male" | "female">("male");
   const [code, setCode] = useState("");
   const [fast, setFast] = useState(false);
+  const [debug, setDebug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const opts = () => ({ name, gender, timeScale: fast ? 30 : 1 });
+  const opts = () => ({ name, gender, timeScale: fast ? 30 : 1, debug });
 
   const create = async () => {
     setBusy(true); setErr("");
     try {
-      onEnter(await colyseus.create("game", opts()));
+      onEnter(await colyseus.create("game", opts()), debug);
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   };
   const join = async () => {
     if (!code.trim()) return;
     setBusy(true); setErr("");
     try {
-      onEnter(await colyseus.joinById(code.trim(), opts()));
+      onEnter(await colyseus.joinById(code.trim(), opts()), debug);
     } catch { setErr("房间不存在或已关闭，请检查邀请码"); setBusy(false); }
   };
 
@@ -92,8 +92,8 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
         <div className="divider"><span>或凭邀请码加入</span></div>
 
         <div className="join-row">
-          <input className="code-input" placeholder="邀请码" value={code}
-            maxLength={8} onChange={(e) => setCode(e.target.value.toUpperCase())}
+          <input className="code-input" placeholder="邀请码（区分大小写）" value={code}
+            maxLength={10} onChange={(e) => setCode(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && join()} />
           <button className="btn-ghost" disabled={busy || !code.trim()} onClick={join}>加入房间</button>
         </div>
@@ -103,6 +103,7 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
         <details className="debug">
           <summary>对局设置</summary>
           <label><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 快节奏演示模式（完整流程快速体验）</label>
+          <label><input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> 调试 · 允许直接开局（人数不足也可开始）</label>
         </details>
       </div>
     </div>
@@ -112,17 +113,19 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
 // ---------- 对局 ----------
 
 interface Msg { kind: string; from?: string; text: string }
-function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) {
+function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: boolean; onLeave: () => void }) {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [init, setInit] = useState<RoomInit | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [myFaction, setMyFaction] = useState<Faction | null>(null);
+  const [chairs, setChairs] = useState<Array<{ id: string; name: string }>>([]);
+  const [introDone, setIntroDone] = useState(false);
   const [gameover, setGameover] = useState<GameOverMsg | null>(null);
 
   useEffect(() => {
     room.onStateChange(() => force());
     room.onMessage("init", (d: RoomInit) => setInit(d));
-    room.onMessage("role", (d: RoleMsg) => setMyFaction(d.faction));
+    room.onMessage("role", (d: RoleMsg) => { setMyFaction(d.faction); setChairs(d.chairs); });
     room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
     room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
     room.onMessage("dm", (m: { from: string; text: string; coins: number }) =>
@@ -151,8 +154,15 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
 
   return (
     <div className="game">
-      <TopBar me={me} myFaction={myFaction} />
       <PhaseBanner day={s.day} phase={s.phase} endsAt={s.phaseEndsAt} />
+      {started && !introDone && me && (
+        <IntroSequence
+          name={me.name}
+          faction={myFaction}
+          chairs={chairs}
+          onDone={() => setIntroDone(true)}
+        />
+      )}
       {gameover && (
         <div className={`gameover ${gameover.winner}`}>
           <h2>{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</h2>
@@ -175,26 +185,17 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
           ) : (
             <div className="card">等待房主开始…</div>
           )}
-          {started && (
-            <ActionPanel
-              room={room}
-              me={me}
-              myFaction={myFaction}
-              phase={s.phase}
-              day={s.day}
-              netDown={s.netDown}
-              players={players}
-            />
-          )}
           {!started && (
             <div className="card waiting">
               <h3>对局房间</h3>
               <p className="waiting-code"><b>{room.roomId}</b></p>
               <p className="sub">把邀请码发给同学 · {players.length} 人在线</p>
               {isHost ? (
-                <button className="btn-primary" disabled={players.length < 5}
+                <button className="btn-primary" disabled={players.length < 5 && !debugRoom}
                   onClick={() => room.send("start")}>
-                  开始对局{players.length < 5 ? `（还差 ${5 - players.length} 人）` : ""}
+                  {debugRoom || players.length >= 5
+                    ? "开始对局"
+                    : `开始对局（还差 ${5 - players.length} 人）`}
                 </button>
               ) : (
                 <p className="sub">等待房主开始…</p>
@@ -203,9 +204,20 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
           )}
         </div>
         <div className="col right">
-          {init && <RuleBoard fixedRules={init.fixedRules} ruleBoard={init.ruleBoard} />}
-          <PlayerList players={players} myId={room.sessionId} myFaction={myFaction} />
-          <ChatPanel msgs={msgs} onSend={(t) => room.send("chat", { text: t })} />
+          <Terminal
+            room={room}
+            me={me}
+            myFaction={myFaction}
+            phase={s.phase}
+            day={s.day}
+            endsAt={s.phaseEndsAt}
+            netDown={s.netDown}
+            players={players}
+            msgs={msgs}
+            onSendChat={(t) => room.send("chat", { text: t })}
+            init={init}
+            nodeName={init?.nodes.find((n) => n.id === me?.nodeId)?.name ?? ""}
+          />
         </div>
       </div>
       <button className="leave" onClick={onLeave}>离开</button>
