@@ -8,7 +8,6 @@ import { RuleBoard } from "./components/RuleBoard";
 import { PlayerList } from "./components/PlayerList";
 import { ChatPanel } from "./components/ChatPanel";
 import { ActionPanel } from "./components/ActionPanel";
-import { GuidePanel } from "./components/GuidePanel";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -20,7 +19,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
         <div className="lobby">
           <div className="lobby-card">
             <h2 style={{ letterSpacing: 3 }}>连接出现异常</h2>
-            <p className="sub" style={{ marginTop: 10 }}>对局界面载入失败，请刷新页面重新进入。若反复出现，请联系主持人重开房间。</p>
+            <p className="sub" style={{ marginTop: 10 }}>对局界面载入失败，请刷新页面重新进入。</p>
           </div>
         </div>
       );
@@ -73,12 +72,6 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
       </header>
 
       <div className="lobby-card">
-        <p className="host-intro">
-          【主持人】各位同学，欢迎来到《校园规则怪谈》。你们之中混入了 2–3 名「自管委理事长」——
-          他们不守校规、每晚修改规矩、白天检举违规者。普通学生要做的只有一件事：
-          <b>遵守规则，活过四天。</b>创建房间后，把邀请码告诉同学即可开局。
-        </p>
-
         <label className="field">
           <span>你的名字</span>
           <input placeholder="输入名字（≤12 字）" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
@@ -151,7 +144,6 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
     <div className="game">
       <TopBar me={me} myFaction={myFaction} />
       <PhaseBanner day={s.day} phase={s.phase} endsAt={s.phaseEndsAt} />
-      <GuidePanel day={s.day} phase={s.phase} started={started} />
       {gameover && (
         <div className={`gameover ${gameover.winner}`}>
           <h2>{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</h2>
