@@ -177,7 +177,8 @@ input {
 .players li.dead { color: var(--dim); text-decoration: line-through; }
 
 /* 聊天 */
-.chat-log { height: 140px; overflow-y: auto; background: var(--panel2); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.chat-log { height: 180px; overflow-y: auto; background: var(--panel2); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.chat-log > div { white-space: pre-line; line-height: 1.6; margin-bottom: 4px; }
 .chat-log .notice { color: var(--amber); font-size: 12px; }
 
 .leave { position: fixed; right: 16px; bottom: 16px; background: var(--panel2); color: var(--dim); }

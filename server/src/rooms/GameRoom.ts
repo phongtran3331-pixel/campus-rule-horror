@@ -13,6 +13,7 @@ import {
   type EngineCtx,
 } from "../logic/RuleEngine.js";
 import { PRICES, rollLoot } from "../data/loot.js";
+import { exploreText, FOOD_NAMES, JUNK_NAMES, MEDICINE_NAMES, NPC, pick } from "../data/flavor.js";
 
 interface JoinOptions {
   name?: string;
@@ -52,6 +53,8 @@ export class GameRoom extends Room<GameState> {
   private commend: { id: string; day: number } | null = null;  // 三好学生表彰
   private guarantee = new Map<string, string>();           // targetId -> guarantorId（当日匿名担保）
   private pendingApBonus = new Set<string>();              // 表彰兑现：次日 AP 15
+  // M5：交互文本库——子房间位置追踪（仅叙事用，不进同步状态）
+  private subroom = new Map<string, string>();             // sessionId -> "<nodeId>:<房号>"
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
@@ -312,6 +315,7 @@ export class GameRoom extends Room<GameState> {
 
     const from = p.nodeId;
     p.nodeId = target.id;
+    this.subroom.delete(client.sessionId); // 换节点即离开原房间
     if (!isChair) p.ap -= 1; // 理事长自由活动不耗 AP
     this.runChecks(client.sessionId, { type: "move", from, to: target.id });
     // R1 单独相处：双向违规（同节点另一性别玩家同样违规）
@@ -360,6 +364,12 @@ export class GameRoom extends Room<GameState> {
       rec.doorplate = true;
       this.sendNoticeTo(client.sessionId, "你确认了门牌号。今天它没有变。");
       return;
+    }
+    if (action.type === "enterRoom" && action.roomId.startsWith(p.nodeId + ":")) {
+      this.subroom.set(client.sessionId, action.roomId); // 记录子房间，供探索文本精确匹配
+    }
+    if (action.type === "talkRed" && !isChair) {
+      this.sendNoticeTo(client.sessionId, pick(NPC.redUniform));
     }
     this.runChecks(client.sessionId, action);
   }
@@ -447,14 +457,22 @@ export class GameRoom extends Room<GameState> {
     const owned = new Set(p.keys.split(",").filter(Boolean));
     const loot = rollLoot(owned);
     const parts: string[] = [];
-    if (loot.junk) { p.junk += loot.junk; p.junkValue += loot.junkValue ?? 0; parts.push(`杂物 ×${loot.junk}（约 ${loot.junkValue} 币）`); }
-    if (loot.food) { p.food += loot.food; parts.push("食物 ×1"); }
-    if (loot.medicine) { p.medicine += loot.medicine; parts.push("药物 ×1"); }
+    if (loot.junk) {
+      p.junk += loot.junk; p.junkValue += loot.junkValue ?? 0;
+      const pool = [...(JUNK_NAMES[p.nodeId] ?? JUNK_NAMES.dorm)];
+      const names: string[] = [];
+      for (let i = 0; i < loot.junk && pool.length; i++) names.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      parts.push(`${names.join("、")}（约 ${loot.junkValue} 币）`);
+    }
+    if (loot.food) { p.food += loot.food; parts.push(`${pick(FOOD_NAMES)} ×1`); }
+    if (loot.medicine) { p.medicine += loot.medicine; parts.push(`${pick(MEDICINE_NAMES)} ×1`); }
     if (loot.scissors) { p.scissors += loot.scissors; parts.push("剪刀 ×1"); }
     if (loot.coffee) { p.coffee += loot.coffee; parts.push("咖啡券 ×1"); }
     if (loot.card) { p.cards += loot.card; parts.push("查阅卡 ×1"); }
     if (loot.key) { owned.add(loot.key); p.keys = [...owned].join(","); parts.push(`钥匙（${ROOM_NAMES[loot.key] ?? loot.key}）`); }
-    this.sendNoticeTo(client.sessionId, parts.length ? `探索收获：${parts.join("、")}。` : "翻遍了角落，什么也没找到。");
+    const roomId = this.subroom.get(client.sessionId) ?? null;
+    const scene = exploreText(roomId, p.nodeId, p.san);
+    this.sendNoticeTo(client.sessionId, scene + (parts.length ? `\n探索收获：${parts.join("、")}。` : ""));
   }
 
   /** 超市：食物 5 币 / 剪刀 15 币（库存无限；理事长假装购买，币与库存都不动） */
@@ -472,7 +490,7 @@ export class GameRoom extends Room<GameState> {
     p.coins -= price;
     if (item === "food") p.food += 1; else p.scissors += 1;
     this.log("超市售货机", `${item === "food" ? "食品" : "工具"} ×1`);
-    this.sendNoticeTo(client.sessionId, `买到了${item === "food" ? "食物" : "剪刀"}（-${price} 币）。`);
+    this.sendNoticeTo(client.sessionId, `${pick(NPC.marketBoss)}\n买到了${item === "food" ? pick(FOOD_NAMES) : "剪刀"}（-${price} 币）。`);
   }
 
   /** 校医院：药物 12 币（理事长假装购买） */
@@ -487,7 +505,7 @@ export class GameRoom extends Room<GameState> {
     p.coins -= PRICES.medicine;
     p.medicine += 1;
     this.log("校医院药房", "药品 ×1");
-    this.sendNoticeTo(client.sessionId, `买到了药物（-${PRICES.medicine} 币），用 useMedicine 恢复 HP 或 SAN。`);
+    this.sendNoticeTo(client.sessionId, `${pick(NPC.doctor)}\n买到了${pick(MEDICINE_NAMES)}（-${PRICES.medicine} 币），用 useMedicine 恢复 HP 或 SAN。`);
   }
 
   /** 用药：+30HP 或 +20SAN（R11 精神自检免责） */
@@ -516,7 +534,7 @@ export class GameRoom extends Room<GameState> {
     p.hunger = Math.min(100, p.hunger + 40);
     let extra = "";
     if (Math.random() < 0.2) { p.hp = Math.max(0, p.hp - 10); p.san = Math.max(0, p.san - 10); extra = " 但今天的菜有点不对劲……（HP -10，SAN -10）"; }
-    this.sendNoticeTo(client.sessionId, `吃了午间套餐：饥饿 +40（现 ${Math.round(p.hunger)}）。${extra}`);
+    this.sendNoticeTo(client.sessionId, `${pick(NPC.canteenAunt)}\n吃了午间套餐：饥饿 +40（现 ${Math.round(p.hunger)}）。${extra}`);
     if (p.hp <= 0) this.eliminate(client.sessionId, "食物中毒");
   }
 
@@ -529,7 +547,7 @@ export class GameRoom extends Room<GameState> {
     p.coins += v;
     p.junk = 0;
     p.junkValue = 0;
-    this.sendNoticeTo(client.sessionId, `回收了杂物，+${v} 币。`);
+    this.sendNoticeTo(client.sessionId, `${pick(NPC.recycleMan)}\n回收了杂物，+${v} 币。`);
   }
 
   // ---------- M3：学生社区（预约制） ----------
@@ -654,7 +672,7 @@ export class GameRoom extends Room<GameState> {
     this.log("社区闸机", "咖啡屋消费");
     const kind = msg?.kind === "san" ? "san" : "hp";
     if (kind === "hp") p.hp = Math.min(100, p.hp + 50); else p.san = Math.min(100, p.san + 30);
-    this.sendNoticeTo(id, kind === "hp" ? "一杯热咖啡下肚：HP +50。" : "你望着拉花发呆了一会儿：SAN +30。");
+    this.sendNoticeTo(id, `${pick(NPC.cafeLady)}\n${kind === "hp" ? "一杯热咖啡下肚：HP +50。" : "你望着拉花发呆了一会儿：SAN +30。"}`);
   }
 
   // ---------- M4：信息战 ----------
