@@ -126,3 +126,5 @@ button.act:hover { border-color: var(--teal); }
 button.act:disabled { opacity: 0.4; cursor: default; }
 button.act.danger { border-color: #a33; color: #ff9b94; }
 .chat-log .dm { color: var(--teal); font-size: 12px; }
+
+/* deployed via GitHub Actions */
