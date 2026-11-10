@@ -42,24 +42,49 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
 
   return (
     <div className="lobby">
-      <h1>校园规则怪谈：自管委</h1>
-      <p className="sub">规则怪谈 × 社交推理 × 生存 · 9–12 人 · 邀请码制</p>
-      <div className="card">
-        <input placeholder="你的名字" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
-        <div className="row">
-          <label><input type="radio" checked={gender === "male"} onChange={() => setGender("male")} /> 男生</label>
-          <label><input type="radio" checked={gender === "female"} onChange={() => setGender("female")} /> 女生</label>
+      <header className="lobby-head">
+        <span className="lobby-badge">CAMPUS RULE HORROR</span>
+        <h1 className="lobby-title">校园规则怪谈</h1>
+        <p className="lobby-sub">自管委在看着你 —— <em>遵守规则，活到最后</em></p>
+      </header>
+
+      <div className="lobby-card">
+        <label className="field">
+          <span>你的名字</span>
+          <input placeholder="输入名字（≤12 字）" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
+        </label>
+
+        <div className="field">
+          <span>性别</span>
+          <div className="seg">
+            <button type="button" className={gender === "male" ? "on" : ""} onClick={() => setGender("male")}>男生</button>
+            <button type="button" className={gender === "female" ? "on" : ""} onClick={() => setGender("female")}>女生</button>
+          </div>
+          <small>部分校规与身份判定会用到</small>
         </div>
-        <label className="row"><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 测试加速 ×30（开发调试用）</label>
-        <button disabled={busy} onClick={create}>创建房间</button>
-        <div className="divider">或</div>
-        <div className="row">
-          <input placeholder="邀请码" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
-          <button disabled={busy} onClick={join}>加入房间</button>
+
+        <button className="btn-primary" disabled={busy || !name.trim()} onClick={create}>
+          {busy ? "正在连接服务器…" : "创建房间"}
+        </button>
+
+        <div className="divider"><span>或凭邀请码加入</span></div>
+
+        <div className="join-row">
+          <input className="code-input" placeholder="邀请码" value={code}
+            maxLength={8} onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === "Enter" && join()} />
+          <button className="btn-ghost" disabled={busy || !code.trim()} onClick={join}>加入房间</button>
         </div>
+
         {err && <p className="err">{err}</p>}
+
+        <details className="debug">
+          <summary>调试选项</summary>
+          <label><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 测试加速 ×30（开发用）</label>
+        </details>
       </div>
-      <p className="foot">M1 框架版 · 素材未就位（CSS 占位）</p>
+
+      <p className="foot">规则怪谈 × 社交推理 × 生存 · 9–12 人 · 邀请码制</p>
     </div>
   );
 }
@@ -133,11 +158,18 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
             />
           )}
           {!started && (
-            <div className="card">
-              <p>邀请码：<b className="code">{room.roomId}</b>（{players.length} 人在线）</p>
-              {isHost
-                ? <button onClick={() => room.send("start")}>开始对局（≥5 人）</button>
-                : <p>等待房主开始…</p>}
+            <div className="card waiting">
+              <h3>对局房间</h3>
+              <p className="waiting-code"><b>{room.roomId}</b></p>
+              <p className="sub">把邀请码发给同学 · {players.length} 人在线</p>
+              {isHost ? (
+                <button className="btn-primary" disabled={players.length < 5}
+                  onClick={() => room.send("start")}>
+                  开始对局{players.length < 5 ? `（还差 ${5 - players.length} 人）` : ""}
+                </button>
+              ) : (
+                <p className="sub">等待房主开始…</p>
+              )}
             </div>
           )}
         </div>
