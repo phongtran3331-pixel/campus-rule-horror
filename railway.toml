@@ -1,0 +1,10 @@
+# Railway 部署配置：monorepo 根目录安装，启动 server 工作区（Colyseus）
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run start -w server"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
