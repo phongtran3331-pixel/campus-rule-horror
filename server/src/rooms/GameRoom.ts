@@ -46,6 +46,12 @@ export class GameRoom extends Room<GameState> {
   // M3：社区预约（key=day）与房间每日使用记录（共享，每房间每天一次）
   private bookings = new Map<number, { am: string[]; pm: string[] }>();
   private roomUsed = new Set<string>();
+  // M4：网络中心 / 设施日志 / 表彰与担保
+  private netTimer?: NodeJS.Timeout;                       // 断网自动恢复
+  private facilityLog: Array<{ facility: string; day: number; phase: string; label: string }> = [];
+  private commend: { id: string; day: number } | null = null;  // 三好学生表彰
+  private guarantee = new Map<string, string>();           // targetId -> guarantorId（当日匿名担保）
+  private pendingApBonus = new Set<string>();              // 表彰兑现：次日 AP 15
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
@@ -81,6 +87,13 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("deptBookings", (client) => this.onDeptBookings(client));
     this.onMessage("cceErase", (client, msg: { ruleId?: string }) => this.onCceErase(client, msg));
     this.onMessage("cafe", (client, msg: { kind?: string }) => this.onCafe(client, msg));
+    // M4：信息战——网络中心 / 行政楼影像室 / 宣传部校园墙 / 私聊转账
+    this.onMessage("cutNet", (client) => this.onCutNet(client));
+    this.onMessage("repairNet", (client) => this.onRepairNet(client));
+    this.onMessage("camera", (client) => this.onCamera(client));
+    this.onMessage("inspectLog", (client, msg: { facility?: string }) => this.onInspectLog(client, msg));
+    this.onMessage("press", (client, msg: { action?: string; targetId?: string; kind?: string }) => this.onPress(client, msg));
+    this.onMessage("dm", (client, msg: { targetId?: string; text?: string; coins?: number }) => this.onDm(client, msg));
     // 调试（仅加速测试局可用，正式局 timeScale=1 时注册被跳过）
     if (this.timeScale > 1) {
       this.onMessage("debug", (client, msg: { give?: string }) => this.onDebug(client, msg));
@@ -111,6 +124,7 @@ export class GameRoom extends Room<GameState> {
 
   onDispose() {
     this.timer.stop();
+    if (this.netTimer) clearTimeout(this.netTimer);
   }
 
   // ---------- 开局 ----------
@@ -160,7 +174,7 @@ export class GameRoom extends Room<GameState> {
     if (phase === "morning") {
       this.state.players.forEach((p, id) => {
         if (!p.alive) return;
-        p.ap = 10;
+        p.ap = this.pendingApBonus.has(id) ? 15 : 10; // 表彰兑现：次日 15 AP
         this.recs.set(id, newDayRecord());       // 每日记录清零
         this.prevNode.set(id, p.nodeId);
       });
@@ -177,6 +191,13 @@ export class GameRoom extends Room<GameState> {
     if (phase === "night") {
       this.accuse = { attempts: 0, failures: 0, swapped: false };
       this.callTargets.clear();
+      // M4：表彰兑现评估——今日受表彰的干事若无违规，明日 AP 上限 15
+      this.pendingApBonus.clear();
+      if (this.commend && this.factionOf.get(this.commend.id) === "student") {
+        if ((this.recs.get(this.commend.id)?.violations.length ?? 0) === 0) {
+          this.pendingApBonus.add(this.commend.id);
+        }
+      }
       // F7：随机挑至多 2 名干事，听到有人叫名字（是否回应由玩家决定）
       const students = this.aliveIds().filter((id) => this.factionOf.get(id) === "student");
       const picked = [...students].sort(() => Math.random() - 0.5).slice(0, 2);
@@ -201,6 +222,22 @@ export class GameRoom extends Room<GameState> {
         const ctx = this.makeCtx(id);
         for (const ruleId of phaseEndViolations(ctx)) this.violate(id, ruleId);
       }
+    }
+    // M4：担保惩戒——被担保者今日若无违规，担保双方各 -25HP/-25SAN
+    if (phase === "evening") {
+      this.guarantee.forEach((guarantor, target) => {
+        const t = this.state.players.get(target);
+        const g = this.state.players.get(guarantor);
+        const violated = (this.recs.get(target)?.violations.length ?? 0) > 0;
+        if (!violated && t?.alive && g?.alive) {
+          t.hp -= 25; t.san -= 25;
+          g.hp -= 25; g.san -= 25;
+          this.broadcast("notice", { text: "【校园墙】匿名担保落空：被担保者今日并无违规，担保双方各受 -25HP/-25SAN 惩戒。" });
+          if (t.hp <= 0) this.eliminate(target, "担保惩戒");
+          if (g.hp <= 0) this.eliminate(guarantor, "担保惩戒");
+        }
+      });
+      this.guarantee.clear();
     }
     if (phase === "noon") {
       if (day === 0) {
@@ -263,6 +300,7 @@ export class GameRoom extends Room<GameState> {
     if (!p || !p.alive || this.state.phase === "lobby") return;
     const target = NODES.find((n) => n.id === msg?.nodeId);
     const ok = target && EDGES.some(([a, b]) => (a === p.nodeId && b === target.id) || (b === p.nodeId && a === target.id));
+    if (process.env.SMOKE_DEBUG) console.log(`[mv ${(Date.now() % 100000) / 1000}s] ${p.name} ${p.nodeId}->${msg?.nodeId} ok=${!!ok} ap=${p.ap} phase=${this.state.phase}`);
     if (!ok) return;
     const isChair = this.factionOf.get(client.sessionId) === "chair";
     if (!isChair && p.ap < 1) { this.sendNoticeTo(client.sessionId, "行动值不足，无法移动。"); return; }
@@ -298,6 +336,7 @@ export class GameRoom extends Room<GameState> {
       const spot = p.nodeId === "field" ? 1 : p.nodeId === "gym" ? 1.5 : 0;
       if (!spot) { this.sendNoticeTo(client.sessionId, "这里无法运动（去操场或体育馆）。"); return; }
       if (rec) rec.exercised = true; // R11 精神自检免责
+      this.log(p.nodeId === "gym" ? "体育馆闸机" : "操场闸机", "运动记录");
       p.hunger = Math.max(0, p.hunger - 8);
       p.hp = Math.min(100, p.hp + 4 * spot);
       p.san = Math.min(100, p.san + 6 * spot);
@@ -352,6 +391,13 @@ export class GameRoom extends Room<GameState> {
     this.accuse.attempts++;
     const rec = this.recs.get(targetId);
     const guilty = this.factionOf.get(targetId) === "student" && (rec?.violations.length ?? 0) > 0;
+    if (guilty && this.guarantee.has(targetId)) {
+      // 匿名担保生效：检举被抵消，按"未成立"处理（不暴露担保存在）
+      this.accuse.failures++;
+      const left = 2 - this.accuse.failures;
+      this.broadcast("notice", { text: `【夜间通报】检举未成立，无事发生。${left > 0 ? `再失败 ${left} 次将停止今晚检举权。` : "今晚检举权终止。"}` });
+      return;
+    }
     if (guilty) {
       const dmg = 25 + 5 * this.state.day;
       t.hp -= dmg;
@@ -425,6 +471,7 @@ export class GameRoom extends Room<GameState> {
     if (p.coins < price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${price} 币）。`); return; }
     p.coins -= price;
     if (item === "food") p.food += 1; else p.scissors += 1;
+    this.log("超市售货机", `${item === "food" ? "食品" : "工具"} ×1`);
     this.sendNoticeTo(client.sessionId, `买到了${item === "food" ? "食物" : "剪刀"}（-${price} 币）。`);
   }
 
@@ -439,6 +486,7 @@ export class GameRoom extends Room<GameState> {
     if (p.coins < PRICES.medicine) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${PRICES.medicine} 币）。`); return; }
     p.coins -= PRICES.medicine;
     p.medicine += 1;
+    this.log("校医院药房", "药品 ×1");
     this.sendNoticeTo(client.sessionId, `买到了药物（-${PRICES.medicine} 币），用 useMedicine 恢复 HP 或 SAN。`);
   }
 
@@ -504,6 +552,12 @@ export class GameRoom extends Room<GameState> {
     this.sendNoticeTo(client.sessionId, `预约成功：第 ${day} 日${slot === "am" ? "上午" : "下午"}段（第 ${b[slot].length}/3 位）。`);
   }
 
+  /** 设施使用日志（M4 查阅卡调阅：只有时间与类别，没有姓名） */
+  private log(facility: string, label: string) {
+    this.facilityLog.push({ facility, day: this.state.day, phase: this.state.phase, label });
+    if (this.facilityLog.length > 400) this.facilityLog.shift();
+  }
+
   /** 当前是否可使用社区房间：人在社区 + 约到了当前时段 */
   private canUseCommunity(id: string): boolean {
     const p = this.state.players.get(id);
@@ -541,6 +595,7 @@ export class GameRoom extends Room<GameState> {
     const b = this.state.players.get(String(msg?.bId ?? ""));
     if (!a || !b || !a.alive || !b.alive || msg?.aId === msg?.bId) { this.sendNoticeTo(id, "档案科找不到这两份档案。"); return; }
     this.roomUsed.add("office");
+    this.log("社区闸机", "办公室调阅档案");
     const same = this.factionOf.get(String(msg?.aId)) === this.factionOf.get(String(msg?.bId));
     this.sendNoticeTo(id, `【档案】${a.name} 与 ${b.name} ${same ? "属于同一阵营" : "不属于同一阵营"}。`);
   }
@@ -556,6 +611,7 @@ export class GameRoom extends Room<GameState> {
     }
     if (!this.roomCheck(id, "dept", "key_dept")) return;
     this.roomUsed.add("dept");
+    this.log("社区闸机", "社区部调阅记录");
     const y = this.bookings.get(this.state.day - 1);
     const fmt = (ids?: string[]) => (ids && ids.length ? ids.map((x) => this.state.players.get(x)?.name ?? "?").join("、") : "无人");
     this.sendNoticeTo(id, `【预约记录】昨日上午：${fmt(y?.am)}；昨日下午：${fmt(y?.pm)}。`);
@@ -576,6 +632,7 @@ export class GameRoom extends Room<GameState> {
     if (idx < 0) { this.sendNoticeTo(id, "板上没有这条规则（只能抹除随机规则）。"); return; }
     this.board.splice(idx, 1);
     this.roomUsed.add("cce");
+    this.log("社区闸机", "策创部使用记录");
     this.broadcast("ruleSwap", { board: this.board });
     this.broadcast("notice", { text: "【校规】某条随机校规的字迹淡了下去，像从没写过。无人认领这件事。" });
     this.sendNoticeTo(id, `你抹去了「${ruleId}」。从明天起它不再生效。`);
@@ -594,9 +651,144 @@ export class GameRoom extends Room<GameState> {
     if (p.coffee <= 0) { this.sendNoticeTo(id, "需要一张咖啡券。"); return; }
     p.coffee -= 1;
     this.roomUsed.add("cafe");
+    this.log("社区闸机", "咖啡屋消费");
     const kind = msg?.kind === "san" ? "san" : "hp";
     if (kind === "hp") p.hp = Math.min(100, p.hp + 50); else p.san = Math.min(100, p.san + 30);
     this.sendNoticeTo(id, kind === "hp" ? "一杯热咖啡下肚：HP +50。" : "你望着拉花发呆了一会儿：SAN +30。");
+  }
+
+  // ---------- M4：信息战 ----------
+
+  /** 网络中心（行政楼内）：剪刀剪断网线，全员失去玩家位置视野；4 分钟后自动恢复 */
+  private onCutNet(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.nodeId !== "admin") return;
+    if (this.state.netDown) return;
+    if (this.factionOf.get(client.sessionId) === "chair") {
+      this.sendNoticeTo(client.sessionId, "你比量了一下网线。现在剪断对你要做的事没有帮助。");
+      return;
+    }
+    if (p.scissors <= 0) { this.sendNoticeTo(client.sessionId, "需要一把剪刀（超市有售）。"); return; }
+    p.scissors -= 1;
+    this.state.netDown = true;
+    this.log("网络中心", "网线被剪断");
+    this.broadcast("notice", { text: "【校园网】网络连接中断。所有监控与位置服务不可用。" });
+    this.netTimer = setTimeout(() => {
+      if (this.state.netDown) {
+        this.state.netDown = false;
+        this.broadcast("notice", { text: "【校园网】网络已自动恢复。" });
+      }
+    }, 240_000 / this.timeScale);
+  }
+
+  /** 修复网线：行政楼，1 AP */
+  private onRepairNet(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.nodeId !== "admin" || !this.state.netDown) return;
+    if (this.factionOf.get(client.sessionId) === "chair") { this.sendNoticeTo(client.sessionId, "你扶了扶网线。"); return; }
+    if (p.ap < 1) { this.sendNoticeTo(client.sessionId, "行动值不足。"); return; }
+    p.ap -= 1;
+    this.state.netDown = false;
+    if (this.netTimer) clearTimeout(this.netTimer);
+    this.log("网络中心", "网线已修复");
+    this.broadcast("notice", { text: "【校园网】网络已恢复（有人修复了线路）。" });
+  }
+
+  /** 行政楼影像室：全图人员位置（节点级）。干事每日 3 次，理事长不限次数随时可用 */
+  private onCamera(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.nodeId !== "admin") return;
+    const isChair = this.factionOf.get(client.sessionId) === "chair";
+    const rec = this.recs.get(client.sessionId);
+    if (!isChair) {
+      if (!rec) return;
+      if (rec.camera >= 3) { this.sendNoticeTo(client.sessionId, "今日调取次数已用完（干事每日 3 次）。"); return; }
+      rec.camera += 1;
+    }
+    this.log("行政楼影像室", "监控调取");
+    const positions = this.aliveIds().map((id) => ({
+      name: this.state.players.get(id)!.name,
+      nodeId: this.state.players.get(id)!.nodeId,
+    }));
+    this.sendNoticeTo(client.sessionId, `【监控】${positions.map((x) => `${x.name}→${NODES.find((n) => n.id === x.nodeId)?.name ?? x.nodeId}`).join("；")}`);
+  }
+
+  /** 行政楼影像室调阅：消耗查阅卡 ×1 + 1 AP + 少量 SAN，查看某设施当日使用记录（只有时间，没有姓名） */
+  private onInspectLog(client: Client, msg: { facility?: string }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.nodeId !== "admin") return;
+    const facility = String(msg?.facility ?? "");
+    if (!facility) return;
+    if (this.factionOf.get(client.sessionId) === "chair") {
+      this.sendNoticeTo(client.sessionId, "你翻了翻记录本。每个时间点你都背下来了——反正不会少什么。");
+      return;
+    }
+    if (p.cards <= 0) { this.sendNoticeTo(client.sessionId, "需要查阅卡 ×1（探索行政楼或教学楼可获得）。"); return; }
+    if (p.ap < 1) { this.sendNoticeTo(client.sessionId, "行动值不足。"); return; }
+    p.cards -= 1;
+    p.ap -= 1;
+    p.san = Math.max(0, p.san - 3);
+    this.log("行政楼影像室", "记录调阅");
+    const PHASE_CN: Record<string, string> = { morning: "上午", noon: "午间", afternoon: "下午", evening: "晚间", night: "夜间" };
+    const rows = this.facilityLog.filter((e) => e.facility === facility && e.day === this.state.day);
+    this.sendNoticeTo(
+      client.sessionId,
+      rows.length
+        ? `【调阅记录】${facility} 今日：${rows.map((e) => `${PHASE_CN[e.phase] ?? e.phase}·${e.label}`).join("；")}。`
+        : `【调阅记录】${facility} 今日暂无使用记录。`,
+    );
+  }
+
+  /** 宣传部校园墙（需 key_press + 预约）：破译规则 / 三好学生表彰 / 匿名担保（三选一，房间每日一次） */
+  private onPress(client: Client, msg: { action?: string; targetId?: string; kind?: string }) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id);
+    if (!p || !p.alive) return;
+    if (this.factionOf.get(id) === "chair") {
+      this.sendNoticeTo(id, "你在校园墙上敲了敲。后台的发布界面你闭着眼都能操作。");
+      return;
+    }
+    if (!this.roomCheck(id, "press", "key_press")) return;
+    const action = String(msg?.action ?? "");
+    if (action === "decode") {
+      const withDetail = this.board.filter((r) => r.detail);
+      if (!withDetail.length) { this.sendNoticeTo(id, "板上已无可破译的规则。"); return; }
+      const picked = [...withDetail].sort(() => Math.random() - 0.5).slice(0, 2);
+      this.roomUsed.add("press");
+      this.log("社区闸机", "校园墙发布");
+      picked.forEach((r) => this.broadcast("notice", { text: `【校园墙·破译】${r.detail}` }));
+    } else if (action === "commend") {
+      const t = this.state.players.get(String(msg?.targetId ?? ""));
+      if (!t || !t.alive) return;
+      this.roomUsed.add("press");
+      this.log("社区闸机", "校园墙发布");
+      this.commend = { id: String(msg?.targetId), day: this.state.day };
+      this.broadcast("notice", { text: `【校园墙】经研究决定，授予 ${t.name}「三好学生」表彰：下次午间讨论拥有 1.5 票与归票权。` });
+    } else if (action === "guarantee") {
+      const t = this.state.players.get(String(msg?.targetId ?? ""));
+      if (!t || !t.alive) return;
+      this.roomUsed.add("press");
+      this.log("社区闸机", "校园墙发布");
+      this.guarantee.set(String(msg?.targetId), id);
+      this.broadcast("notice", { text: "【校园墙】出现一条匿名担保。被担保者若今日违规，夜间将免于被检举；若无违规，担保双方各受 -25HP/-25SAN 的惩戒。" });
+    }
+  }
+
+  /** 私聊 + 转账：仅收发双方可见 */
+  private onDm(client: Client, msg: { targetId?: string; text?: string; coins?: number }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive) return;
+    const targetId = String(msg?.targetId ?? "");
+    const t = this.state.players.get(targetId);
+    if (!t || !t.alive || targetId === client.sessionId) return;
+    const coins = Math.max(0, Math.min(Number(msg?.coins ?? 0) || 0, p.coins));
+    const text = String(msg?.text ?? "").slice(0, 200);
+    if (process.env.SMOKE_DEBUG) console.log(`[dm] ${p.name} -> ${t?.name} text=${text} coins=${coins}`);
+    if (!text && coins <= 0) return;
+    p.coins -= coins;
+    t.coins += coins;
+    this.clients.find((c) => c.sessionId === targetId)?.send("dm", { from: p.name, text, coins });
+    this.sendNoticeTo(client.sessionId, `私聊已送达 ${t.name}${coins > 0 ? `（附 ${coins} 币）` : ""}。`);
   }
 
   // ---------- M3：调试（仅 timeScale > 1 注册） ----------
@@ -609,6 +801,9 @@ export class GameRoom extends Room<GameState> {
     else if (g === "food") p.food += 1;
     else if (g === "medicine") p.medicine += 1;
     else if (g === "coffee") p.coffee += 1;
+    else if (g === "scissors") p.scissors += 1;
+    else if (g === "card") p.cards += 1;
+    else if (g === "junk") { p.junk += 1; p.junkValue += 3; }
     else if (g.startsWith("key_")) {
       const ks = new Set(p.keys.split(",").filter(Boolean));
       ks.add(g);
@@ -685,10 +880,16 @@ export class GameRoom extends Room<GameState> {
   private resolveVote(day: number) {
     const abstain = this.aliveIds().filter((id) => !this.recs.get(id)?.voted);
     const tally = new Map<string, number>();
+    const weightOf = (voter: string) => (this.commend && this.commend.id === voter && this.commend.day < day ? 1.5 : 1);
     this.votes.forEach((target, voter) => {
       if (!this.state.players.get(voter)?.alive) return;
-      tally.set(target, (tally.get(target) ?? 0) + 1);
+      tally.set(target, (tally.get(target) ?? 0) + weightOf(voter));
     });
+    const commended = this.commend && this.commend.day < day ? this.state.players.get(this.commend.id) : null;
+    if (commended?.alive) {
+      this.broadcast("notice", { text: `【表彰】${commended.name} 主持今日发言顺序并归票（1.5 票已计入）。` });
+    }
+    this.commend = null;
     let top: string | null = null;
     let topN = 0;
     let tie = false;

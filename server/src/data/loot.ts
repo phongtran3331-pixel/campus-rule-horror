@@ -24,7 +24,7 @@ const TABLE: Array<[keyof LootResult & string, number]> = [
   ["key", 0.08],
 ];
 
-export const COMMUNITY_KEYS = ["key_office", "key_dept", "key_cce"] as const;
+export const COMMUNITY_KEYS = ["key_office", "key_dept", "key_cce", "key_press"] as const;
 
 export const PRICES = {
   food: 5,       // 超市：食物

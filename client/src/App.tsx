@@ -7,6 +7,7 @@ import { MapView } from "./components/MapView";
 import { RuleBoard } from "./components/RuleBoard";
 import { PlayerList } from "./components/PlayerList";
 import { ChatPanel } from "./components/ChatPanel";
+import { ActionPanel } from "./components/ActionPanel";
 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
@@ -66,7 +67,6 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom) => void }) {
 // ---------- 对局 ----------
 
 interface Msg { kind: string; from?: string; text: string }
-
 function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [init, setInit] = useState<RoomInit | null>(null);
@@ -80,6 +80,8 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
     room.onMessage("role", (d: RoleMsg) => setMyFaction(d.faction));
     room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
     room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
+    room.onMessage("dm", (m: { from: string; text: string; coins: number }) =>
+      setMsgs((s) => [...s.slice(-99), { kind: "dm", from: m.from, text: `${m.text}${m.coins > 0 ? `（附 ${m.coins} 币）` : ""}` }]));
     room.onMessage("chat", (m: { from: string; text: string }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "chat", from: m.from, text: m.text }]));
     room.onMessage("notice", (m: { text: string }) =>
@@ -112,10 +114,23 @@ function GameScreen({ room, onLeave }: { room: GameRoom; onLeave: () => void }) 
               edges={init.edges}
               players={players}
               myId={room.sessionId}
+              phase={s.phase}
+              netDown={s.netDown}
               onMove={(nodeId) => room.send("move", { nodeId })}
             />
           ) : (
             <div className="card">等待房主开始…</div>
+          )}
+          {started && (
+            <ActionPanel
+              room={room}
+              me={me}
+              myFaction={myFaction}
+              phase={s.phase}
+              day={s.day}
+              netDown={s.netDown}
+              players={players}
+            />
           )}
           {!started && (
             <div className="card">

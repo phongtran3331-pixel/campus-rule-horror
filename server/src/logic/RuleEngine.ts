@@ -27,10 +27,11 @@ export interface DayRecord {
   voted: boolean;        // 今日午间是否投过票（F8）
   chats: number;         // 当前时段公共频道发言数（R8）
   r8Fired: boolean;      // R8 本时段已通报过（只记一次，避免刷屏刷弹药）
+  camera: number;        // 行政楼影像室监控调取次数（干事每日 3 次；理事长不限）
 }
 
 export function newDayRecord(): DayRecord {
-  return { violations: [], exercised: false, medicined: false, doorplate: false, voted: false, chats: 0, r8Fired: false };
+  return { violations: [], exercised: false, medicined: false, doorplate: false, voted: false, chats: 0, r8Fired: false, camera: 0 };
 }
 
 // ---------- 引擎上下文 ----------

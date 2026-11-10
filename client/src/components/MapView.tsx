@@ -5,39 +5,70 @@ interface Props {
   edges: Array<[string, string]>;
   players: Array<[string, Player]>;
   myId: string;
+  phase: string;
+  netDown: boolean;
   onMove: (nodeId: string) => void;
 }
 
-/** SVG 占位地图：素材就位后替换为 map_campus_day.png 底图 + 节点热区 */
-export function MapView({ nodes, edges, players, myId, onMove }: Props) {
+/** 校园俯瞰图（白/夜两版）+ 节点热区；断网时全员位置不可见（滤镜状态，不重绘底图） */
+export function MapView({ nodes, edges, players, myId, phase, netDown, onMove }: Props) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const me = players.find(([id]) => id === myId)?.[1];
+  const isNight = phase === "evening" || phase === "night";
   const countAt = (nodeId: string) => players.filter(([, p]) => p.alive && p.nodeId === nodeId).length;
   const adjacent = new Set(
     edges.filter(([a, b]) => a === me?.nodeId || b === me?.nodeId).flatMap(([a, b]) => [a, b])
   );
 
   return (
-    <div className="card map">
-      <svg viewBox="0 0 100 100" className="map-svg">
-        {edges.map(([a, b]) => {
-          const na = byId.get(a)!, nb = byId.get(b)!;
-          return <line key={`${a}-${b}`} x1={na.x} y1={na.y} x2={nb.x} y2={nb.y} className="edge" />;
-        })}
+    <div className={`card map ${netDown ? "netdown" : ""}`}>
+      <img
+        className="map-bg"
+        src={isNight ? "/assets/map-evening.jpg" : "/assets/map-day.jpg"}
+        alt="校园地图"
+        draggable={false}
+      />
+      {netDown && <div className="map-netdown-mask">断网中 · 位置服务不可用</div>}
+      <svg viewBox="0 0 100 100" className="map-svg" preserveAspectRatio="none">
         {nodes.map((n) => {
           const isMe = me?.nodeId === n.id;
           const canMove = me?.alive && adjacent.has(n.id) && !isMe;
           const c = countAt(n.id);
           return (
             <g key={n.id} onClick={() => canMove && onMove(n.id)} className={canMove ? "node clickable" : "node"}>
-              <circle cx={n.x} cy={n.y} r={3.4} className={`node-circle ${n.type} ${isMe ? "me" : ""}`} />
-              <text x={n.x} y={n.y - 4.6} className="node-name">{n.name}</text>
-              {c > 0 && <text x={n.x} y={n.y + 6.4} className="node-count">{c}人</text>}
+              <circle cx={n.x} cy={n.y} r={2.6} className={`node-circle ${n.type} ${isMe ? "me" : ""}`} />
+              <text x={n.x} y={n.y - 3.4} className="node-name">{n.name}</text>
+              {!netDown && c > 0 && <text x={n.x} y={n.y + 4.8} className="node-count">{c}人</text>}
             </g>
           );
         })}
+        {!netDown &&
+          players
+            .filter(([id, p]) => p.alive)
+            .map(([id, p]) => {
+              const n = byId.get(p.nodeId);
+              if (!n) return null;
+              // 同节点堆叠：按索引错位，避免完全重叠
+              const sameNode = players.filter(([, q]) => q.alive && q.nodeId === p.nodeId);
+              const idx = sameNode.findIndex(([sid]) => sid === id);
+              const off = (idx - (sameNode.length - 1) / 2) * 3.2;
+              const isMe = id === myId;
+              return (
+                <circle
+                  key={id}
+                  cx={n.x + off}
+                  cy={n.y + 1.8}
+                  r={1.5}
+                  className={`player-dot ${isMe ? "me" : ""}`}
+                >
+                  <title>{`${p.name}${isMe ? "（你）" : ""}`}</title>
+                </circle>
+              );
+            })}
       </svg>
-      <p className="hint">点击进入相邻节点（1 AP）· 同节点玩家互相可见（占位实现）</p>
+      <p className="hint">
+        {netDown ? "网络中断：其他玩家位置不可见" : "点击进入相邻节点（1 AP）· 同节点玩家互相可见"}
+      </p>
     </div>
   );
 }

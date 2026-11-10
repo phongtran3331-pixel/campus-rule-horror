@@ -31,5 +31,6 @@ export class GameState extends Schema {
   @type("string") phase: "lobby" | "morning" | "noon" | "afternoon" | "evening" | "night" | "ended" = "lobby";
   @type("number") day = 0;                    // 0..4，Day4 后结算
   @type("number") phaseEndsAt = 0;            // epoch ms，0 = 未计时
+  @type("boolean") netDown = false;           // M4：网络中心被破坏，全员失去玩家位置视野
   @type("string") rulesVersion = "v1.4";
 }
