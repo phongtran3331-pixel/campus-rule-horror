@@ -3,7 +3,7 @@ name: Deploy Client (GitHub Pages)
 on:
   push:
     branches: [main]
-    paths: ["client/**", ".github/workflows/deploy-client.yml", "package-lock.json"]
+    paths: ["client/**", "portal/**", ".github/workflows/deploy-client.yml", "package-lock.json"]
   workflow_dispatch:
 
 permissions:
@@ -28,13 +28,20 @@ jobs:
       - name: Build client
         env:
           GH_PAGES: "1"
+          VITE_SERVER_URL: "ws://113.44.183.22:2567"
         run: npm run build -w client
+      - name: Assemble site (portal + game)
+        run: |
+          mkdir -p site
+          cp -r portal/. site/
+          mkdir -p site/game
+          cp -r client/dist/. site/game/
       - uses: actions/configure-pages@v5
         with:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: client/dist
+          path: site
 
   deploy:
     needs: build

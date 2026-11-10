@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园规则怪谈 · 主站</title>
+<style>
+  :root {
+    --bg: #0a0c12;
+    --panel: #12151f;
+    --panel2: #171b28;
+    --line: #262b3d;
+    --text: #e6e9f2;
+    --dim: #8a91a8;
+    --accent: #d33f2e;
+    --accent2: #e8b04b;
+    --ok: #4ade80;
+    --bad: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    overflow-x: hidden;
+    position: relative;
+  }
+  /* 雾效 */
+  body::before {
+    content: "";
+    position: fixed; inset: -50%;
+    background:
+      radial-gradient(ellipse 40% 30% at 20% 30%, rgba(120, 140, 200, .06), transparent 60%),
+      radial-gradient(ellipse 50% 35% at 80% 60%, rgba(120, 140, 200, .05), transparent 60%);
+    animation: fog 26s linear infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes fog {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to   { transform: translate3d(3%, 2%, 0) scale(1.06); }
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 56px 24px 80px; position: relative; z-index: 1; }
+
+  /* 顶部标题：轻微闪烁的路灯感 */
+  header { text-align: center; margin-bottom: 48px; }
+  .badge {
+    display: inline-block; font-size: 12px; letter-spacing: 4px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; margin-bottom: 22px;
+  }
+  h1 {
+    font-size: clamp(34px, 6vw, 58px); letter-spacing: 6px; font-weight: 800;
+    text-shadow: 0 0 24px rgba(211, 63, 46, .35);
+    animation: flicker 7s infinite;
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: .55; }
+    94% { opacity: 1; }
+    96% { opacity: .7; }
+    97% { opacity: 1; }
+  }
+  .sub { margin-top: 14px; color: var(--dim); font-size: 15px; letter-spacing: 2px; }
+  .sub em { color: var(--accent2); font-style: normal; }
+
+  /* 游戏主入口 */
+  .hero {
+    display: block; text-decoration: none; color: inherit;
+    background: linear-gradient(135deg, #1a1020 0%, var(--panel) 55%, #141b2a 100%);
+    border: 1px solid var(--line); border-radius: 18px;
+    padding: 40px 36px; margin-bottom: 28px;
+    position: relative; overflow: hidden;
+    transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+  }
+  .hero:hover {
+    transform: translateY(-4px);
+    border-color: rgba(211, 63, 46, .55);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 0 0 1px rgba(211, 63, 46, .15);
+  }
+  .hero::after {
+    content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(211, 63, 46, .22), transparent 65%);
+  }
+  .hero .tag {
+    display: inline-block; font-size: 12px; color: var(--accent2);
+    border: 1px solid rgba(232, 176, 75, .4); border-radius: 6px; padding: 3px 10px; margin-bottom: 16px;
+    letter-spacing: 2px;
+  }
+  .hero h2 { font-size: clamp(24px, 4vw, 34px); letter-spacing: 3px; margin-bottom: 12px; }
+  .hero p { color: var(--dim); font-size: 14px; line-height: 1.9; max-width: 640px; }
+  .hero .go {
+    margin-top: 22px; display: inline-flex; align-items: center; gap: 10px;
+    color: var(--text); font-size: 15px; letter-spacing: 2px;
+  }
+  .hero .go .arrow { transition: transform .25s ease; }
+  .hero:hover .go .arrow { transform: translateX(6px); }
+
+  /* 服务器状态 */
+  .status {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 20px;
+    font-size: 13px; color: var(--dim);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #555; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .dot.off { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+
+  /* 次级入口网格（预留扩展） */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 26px 24px; transition: transform .2s ease, border-color .2s ease;
+  }
+  .card.soon { opacity: .55; cursor: not-allowed; }
+  .card:not(.soon):hover { transform: translateY(-3px); border-color: rgba(232, 176, 75, .4); }
+  .card .ic { font-size: 26px; margin-bottom: 12px; }
+  .card h3 { font-size: 17px; letter-spacing: 2px; margin-bottom: 8px; }
+  .card p { font-size: 13px; color: var(--dim); line-height: 1.8; }
+  .card .soon-tag {
+    display: inline-block; margin-top: 14px; font-size: 11px; color: var(--dim);
+    border: 1px dashed var(--line); border-radius: 999px; padding: 3px 12px; letter-spacing: 2px;
+  }
+  a.card { text-decoration: none; color: inherit; display: block; }
+
+  footer {
+    margin-top: 56px; text-align: center; color: #565d75; font-size: 12px; letter-spacing: 1px; line-height: 2;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="badge">CAMPUS RULE HORROR</div>
+    <h1>校园规则怪谈</h1>
+    <div class="sub">自管委在看着你 —— <em>遵守规则，活到最后</em></div>
+  </header>
+
+  <a class="hero" href="./game/">
+    <div class="tag">多人生存 · 9 人局</div>
+    <h2>进入游戏</h2>
+    <p>普通学生 vs 自管委理事长的规则博弈。白天探索校园、搜集物资、推理身份；夜晚回到宿舍，在食堂投票放逐。违规则被通报，活过第四天就是胜利。</p>
+    <div class="go">打开对局大厅 <span class="arrow">→</span></div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">正在检测服务器…</span>
+    </div>
+  </a>
+
+  <div class="grid">
+    <div class="card soon">
+      <div class="ic">📜</div>
+      <h3>规则图鉴</h3>
+      <p>固定校规与随机校规全收录，附违规判定细节。</p>
+      <span class="soon-tag">敬请期待</span>
+    </div>
+    <div class="card soon">
+      <div class="ic">🗺️</div>
+      <h3>校园地图</h3>
+      <p>教学楼、学生社区、行政楼…全节点交互一览。</p>
+      <span class="soon-tag">敬请期待</span>
+    </div>
+    <div class="card soon">
+      <div class="ic">🏆</div>
+      <h3>对局回放</h3>
+      <p>回顾每一局的投票、检举与翻盘时刻。</p>
+      <span class="soon-tag">敬请期待</span>
+    </div>
+    <div class="card soon">
+      <div class="ic">📖</div>
+      <h3>玩法详解</h3>
+      <p>完整生存手册：数值、道具、阵营能力说明。</p>
+      <span class="soon-tag">敬请期待</span>
+    </div>
+  </div>
+
+  <footer>
+    校园规则怪谈：自管委 · 多人联机规则怪谈生存游戏<br>
+    服务端地址 ws://113.44.183.22:2567 · 客户端由 GitHub Pages 托管
+  </footer>
+</div>
+
+<script>
+  (async () => {
+    const dot = document.getElementById('dot');
+    const text = document.getElementById('statusText');
+    try {
+      const r = await fetch('http://113.44.183.22:2567/healthz', { cache: 'no-store' });
+      const j = await r.json();
+      if (j.ok) {
+        dot.classList.add('on');
+        text.textContent = '服务器在线 · 可以开房';
+        return;
+      }
+      throw new Error();
+    } catch {
+      dot.classList.add('off');
+      text.textContent = '服务器暂不可达 · 请稍后再试或联系管理员放行 2567 端口';
+    }
+  })();
+</script>
+</body>
+</html>
