@@ -6,7 +6,7 @@ export function ChatPanel({ msgs, onSend }: { msgs: Msg[]; onSend: (t: string) =
   const [text, setText] = useState("");
   return (
     <div className="card chat">
-      <h3>频道（公共占位）</h3>
+      <h3>校园广播与留言</h3>
       <div className="chat-log">
         {msgs.map((m, i) => (
           <div key={i} className={m.kind}>

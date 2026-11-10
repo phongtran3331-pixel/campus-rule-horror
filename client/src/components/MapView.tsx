@@ -66,9 +66,7 @@ export function MapView({ nodes, edges, players, myId, phase, netDown, onMove }:
               );
             })}
       </svg>
-      <p className="hint">
-        {netDown ? "网络中断：其他玩家位置不可见" : "点击进入相邻节点（1 AP）· 同节点玩家互相可见"}
-      </p>
+      {netDown && <p className="hint">网络中断：所有定位服务已离线</p>}
     </div>
   );
 }

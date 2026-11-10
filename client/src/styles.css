@@ -119,6 +119,22 @@ input {
 .waiting-code { font-size: 34px; letter-spacing: 10px; color: var(--teal); margin: 10px 0 4px; font-weight: 800; }
 .waiting .btn-primary { margin-top: 14px; }
 
+/* 主持人引导 */
+.host-intro {
+  font-size: 13.5px; line-height: 2; color: var(--text);
+  background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  border-radius: 8px; padding: 12px 14px; margin-bottom: 20px;
+}
+.host-intro b { color: var(--amber); }
+.guide {
+  margin-top: 10px; padding: 10px 14px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  font-size: 13.5px; line-height: 1.9; color: var(--text);
+  border-left: 3px solid var(--teal);
+}
+.debug summary { list-style: none; }
+.debug summary::-webkit-details-marker { display: none; }
+
 /* 对局布局 */
 .game { position: relative; padding-bottom: 40px; }
 .main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 4px; }
