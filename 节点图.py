@@ -121,9 +121,9 @@ SCENE_PRESETS: "Dict[str, ScenePreset]" = {
     # ---------- 体育馆（原默认示例，8 子节点固定） ----------
     "体育馆":   ScenePreset(3, 3, 3, 3, 3, ("器械区", "羽毛球场", "篮球场", "乒乓球台", "看台", "更衣室", "器材室", "走廊"), True, "原默认场景"),
     # ---------- 重点调试：教学楼（多） ----------
-    "教学楼A": ScenePreset(4, 4, 3, 4, 4, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
-    "教学楼B": ScenePreset(4, 4, 3, 4, 4, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
-    "教学楼C": ScenePreset(4, 4, 3, 4, 4, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
+    "教学楼A": ScenePreset(4, 3, 3, 3, 3, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
+    "教学楼B": ScenePreset(4, 3, 3, 3, 3, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
+    "教学楼C": ScenePreset(4, 3, 3, 3, 3, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
     # ---------- 重点调试：图书馆（中） ----------
     "图书馆":   ScenePreset(3, 4, 2, 3, 3, ("门禁闸机", "文学区", "理科区", "报刊角", "自习区", "古籍室", "还书台", "书架深处"), False),
     # ---------- 重点调试：行政楼 / 学校大门 / 小树林（少） ----------
@@ -186,7 +186,7 @@ class Constraints:
     max_branch: int = 6             # 最大事件出度
     max_scene_children: int = 20    # 最大场景子节点数
     max_entries: int = 8            # 单场景最大初始事件数
-    max_nodes: int = 2000           # 最大事件节点总数
+    max_nodes: int = 3000           # 最大事件节点总数（上限仅兜底，正常应自然生成完毕）
     continue_prob: float = 0.6      # 未达目标深度时的强制续接概率
 
     def validate(self) -> None:
@@ -222,17 +222,22 @@ class PNode:
     num: int
     parent: int                                        # 所属 X 编号
     name: str = ""                                     # 探索子位置名
-    children: List[int] = field(default_factory=list)  # 初始 Y 编号
+    situation: str = ""                                # 进入时场景描述（由创作 AI 填写）
+    children: List[int] = field(default_factory=list)  # 初始 Y 编号（= 第一层选项）
 
 
 @dataclass
 class YNode:
+    """事件节点 = 一个选项：choice 为选项文本，result 为选中后的结果文本。
+    子 Y（children）= 该结果之后出现的下一层选项；无子 Y 则事件链结束。"""
     num: int
     parent: int                                        # 父节点编号
     parent_kind: str                                   # "P" 或 "Y"
     depth: int
     K: int
-    children: List[int] = field(default_factory=list)  # 子 Y 编号
+    choice: str = ""                                   # 选项文本（创作 AI 填写）
+    result: str = ""                                   # 结果文本（创作 AI 填写）
+    children: List[int] = field(default_factory=list)  # 子 Y 编号（下一层选项）
 
 
 # ======================================================================
@@ -353,11 +358,24 @@ class CampusTreeGenerator:
     # ------------------------------------------------------------------
 
     def _gen_entries(self) -> None:
-        for p in self.ps.values():
-            count = self._sample_entry_count()
-            for _ in range(count):
+        """轮询制分配事件链：先保证每个 P 至少一条，再逐轮补第二、第三条……
+        避免节点总数触顶时靠后的 P 一条事件都分不到。"""
+        ps = list(self.ps.values())
+        round_idx = 0
+        while len(self.ys) < self.cons.max_nodes:
+            progressed = False
+            for p in ps:
                 if len(self.ys) >= self.cons.max_nodes:
                     return
+                if round_idx == 0 or len(p.children) < self._sample_entry_count():
+                    self._new_chain(p)
+                    progressed = True
+            if not progressed:
+                break
+            round_idx += 1
+        # 兜底：任何 P 都不允许没有事件
+        for p in ps:
+            if not p.children and len(self.ys) < self.cons.max_nodes:
                 self._new_chain(p)
 
     def _new_chain(self, p: PNode) -> None:
@@ -443,6 +461,8 @@ def validate(gen: CampusTreeGenerator) -> List[str]:
             errors.append(f"P{p.num} 的父节点 X{p.parent} 不存在")
         elif p.num not in gen.xs[p.parent].children:
             errors.append(f"P{p.num} 未登记在 X{p.parent} 的子节点列表中")
+        if not p.children:
+            errors.append(f"P{p.num}（{p.name}）没有任何事件入口——子位置缺少事件")
         for yid in p.children:
             y = gen.ys.get(yid)
             if y is None:
@@ -629,6 +649,8 @@ def render_stats(gen: CampusTreeGenerator, stats: Stats, errors: List[str]) -> s
     lines.append(f"最大事件出度         : {stats.max_branch}")
     lines.append(f"平均事件初度         : {stats.avg_entry:.3f}")
     lines.append(f"初度范围             : {stats.entry_min} ~ {stats.entry_max}")
+    lines.append(f"是否触顶 max_nodes   : {'是（结构可能被截断）' if len(gen.ys) >= gen.cons.max_nodes else '否（自然生成完毕）'}")
+    lines.append(f"无事件的 P 子位置     : {sum(1 for p in gen.ps.values() if not p.children)}")
 
     lines.append("")
     lines.append("=== 约束 ===")
@@ -658,7 +680,7 @@ def render_json(gen: CampusTreeGenerator, stats: Stats, errors: List[str]) -> st
         "constraints": asdict(gen.cons),
         "scene": gen.scene_name,
         "x": [{"num": x.num, "name": x.name, "children": x.children} for x in (gen.xs[n] for n in sorted(gen.xs))],
-        "p": [{"num": p.num, "name": p.name, "parent": p.parent, "children": p.children} for p in (gen.ps[n] for n in sorted(gen.ps))],
+        "p": [{"num": p.num, "name": p.name, "parent": p.parent, "situation": p.situation, "children": p.children} for p in (gen.ps[n] for n in sorted(gen.ps))],
         "y": [
             {
                 "num": y.num,
@@ -666,6 +688,8 @@ def render_json(gen: CampusTreeGenerator, stats: Stats, errors: List[str]) -> st
                 "b": y.depth,
                 "c": y.K,
                 "d": len(y.children),
+                "choice": y.choice,
+                "result": y.result,
                 "children": y.children,
             }
             for y in (gen.ys[n] for n in sorted(gen.ys))
