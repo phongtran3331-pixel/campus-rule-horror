@@ -238,6 +238,7 @@ class YNode:
     choice: str = ""                                   # 选项文本（创作 AI 填写）
     result: str = ""                                   # 结果文本（创作 AI 填写）
     children: List[int] = field(default_factory=list)  # 子 Y 编号（下一层选项）
+    quiz: bool = False                                   # True = 深入探索答题节点（程序标记，创作 AI 出题）
 
 
 # ======================================================================
@@ -427,7 +428,48 @@ class CampusTreeGenerator:
     def build(self) -> "CampusTreeGenerator":
         self._gen_scenes()
         self._gen_entries()
+        self._mark_quiz()
         return self
+
+    # ------------------------------------------------------------------
+    # 深入探索答题节点标记
+    # ------------------------------------------------------------------
+
+    def _p_ancestor(self, y: YNode) -> Optional[int]:
+        """沿父链回溯 Y 所属的 P 编号（回溯上限防环）。"""
+        hops = 0
+        while y.parent_kind == "Y" and hops < 100:
+            y = self.ys[y.parent]
+            hops += 1
+        return y.parent if y.parent_kind == "P" else None
+
+    def _mark_quiz(self) -> None:
+        """标记答题节点：必须是叶 Y 且深度 >= 2；密度约每 10 个 Y 一个，
+        全场景至多 3 个；尽量分散在不同 P 子位置下（先来先占深度大的）。"""
+        n_target = min(3, len(self.ys) // 10)
+        if n_target <= 0:
+            return
+        cands = sorted(
+            (y for y in self.ys.values() if not y.children and y.depth >= 2),
+            key=lambda y: -y.depth,
+        )
+        chosen: List[YNode] = []
+        used_p: set = set()
+        for y in cands:  # 第一轮：每个 P 下只选一个
+            if len(chosen) >= n_target:
+                break
+            p = self._p_ancestor(y)
+            if p in used_p:
+                continue
+            used_p.add(p)
+            y.quiz = True
+            chosen.append(y)
+        for y in cands:  # 第二轮：P 不够时同 P 补选
+            if len(chosen) >= n_target:
+                break
+            if not y.quiz:
+                y.quiz = True
+                chosen.append(y)
 
 
 # ======================================================================
@@ -491,6 +533,10 @@ def validate(gen: CampusTreeGenerator) -> List[str]:
         # d 与 children 一致性
         if len(y.children) > 0 and y.depth >= gen.cons.max_depth:
             errors.append(f"Y{y.num} 已达最大深度仍产生子节点")
+
+        # 答题节点必须是叶节点
+        if y.quiz and y.children:
+            errors.append(f"Y{y.num} 是答题节点但还有子节点")
 
     # 双向引用一致性
     for y in gen.ys.values():
@@ -577,6 +623,8 @@ def _render_children(gen: CampusTreeGenerator, kind: str, num: int, prefix: str,
         label = f"{ckind}{cnum}"
         if ckind == "P":
             label += f" {gen.ps[cnum].name}"
+        elif ckind == "Y" and gen.ys[cnum].quiz:
+            label += " [答题]"
         lines.append(prefix + connector + label)
         child_prefix = prefix + ("    " if last else "│   ")
         if ckind == "Y" and not gen.ys[cnum].children:
@@ -610,10 +658,11 @@ def render_params(gen: CampusTreeGenerator) -> str:
         lines.append(f"P{p.num}：名称={p.name}，父节点=X{p.parent}，子节点个数={len(p.children)}")
 
     lines.append("")
-    lines.append("# Y：{a=父节点,b=深度,c=K,d=出度}")
+    lines.append("# Y：{a=父节点,b=深度,c=K,d=出度,q=是否答题节点}")
     for y in (gen.ys[n] for n in sorted(gen.ys)):
         a = f"{y.parent_kind}{y.parent}"
-        lines.append(f"Y{y.num}：{{a={a},b={y.depth},c={y.K},d={len(y.children)}}}")
+        q = 1 if y.quiz else 0
+        lines.append(f"Y{y.num}：{{a={a},b={y.depth},c={y.K},d={len(y.children)},q={q}}}")
 
     return "\n".join(lines) + "\n"
 
@@ -638,6 +687,7 @@ def render_stats(gen: CampusTreeGenerator, stats: Stats, errors: List[str]) -> s
     lines.append(f"P 场景节点数         : {stats.p_count}")
     lines.append(f"Y 事件节点数         : {stats.y_count}")
     lines.append(f"END 终止标记数       : {stats.end_count}")
+    lines.append(f"答题节点数           : {sum(1 for y in gen.ys.values() if y.quiz)}")
     lines.append(f"节点总数（含 END）   : {stats.node_total}")
     lines.append("")
     lines.append(f"平均事件深度         : {stats.avg_depth:.3f}")
@@ -690,6 +740,7 @@ def render_json(gen: CampusTreeGenerator, stats: Stats, errors: List[str]) -> st
                 "d": len(y.children),
                 "choice": y.choice,
                 "result": y.result,
+                "quiz": y.quiz,
                 "children": y.children,
             }
             for y in (gen.ys[n] for n in sorted(gen.ys))

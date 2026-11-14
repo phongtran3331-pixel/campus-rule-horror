@@ -1,0 +1,1756 @@
+{
+  "version": "1.0.0",
+  "seed": 45,
+  "params": {
+    "N_P": {
+      "level": 2,
+      "name": "Ⅱ 较低",
+      "range": [
+        2,
+        5
+      ]
+    },
+    "mu_D": {
+      "level": 2,
+      "value": 3.0
+    },
+    "sigma_D^2": {
+      "level": 1,
+      "sigma": 0.5,
+      "variance": 0.25
+    },
+    "mu_B": {
+      "level": 2,
+      "value": 1.5
+    },
+    "mu_R": {
+      "level": 2,
+      "value": 2.0
+    }
+  },
+  "constraints": {
+    "min_depth": 1,
+    "max_depth": 12,
+    "max_branch": 6,
+    "max_scene_children": 20,
+    "max_entries": 8,
+    "max_nodes": 2000,
+    "continue_prob": 0.6
+  },
+  "scene": "食堂",
+  "x": [
+    {
+      "num": 1,
+      "name": "食堂",
+      "children": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    }
+  ],
+  "p": [
+    {
+      "num": 1,
+      "name": "后厨门口",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        1,
+        48,
+        63,
+        109
+      ]
+    },
+    {
+      "num": 2,
+      "name": "小卖部",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        2,
+        30,
+        50,
+        96
+      ]
+    },
+    {
+      "num": 3,
+      "name": "倒餐台",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        10,
+        31,
+        125
+      ]
+    },
+    {
+      "num": 4,
+      "name": "餐桌区",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        15,
+        53,
+        101,
+        113
+      ]
+    },
+    {
+      "num": 5,
+      "name": "打饭窗口",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        22,
+        41,
+        65,
+        124
+      ]
+    },
+    {
+      "num": 6,
+      "name": "角落卡座",
+      "parent": 1,
+      "situation": "",
+      "children": [
+        25,
+        46,
+        91
+      ]
+    }
+  ],
+  "y": [
+    {
+      "num": 1,
+      "a": "P1",
+      "b": 1,
+      "c": 1,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 2,
+      "a": "P2",
+      "b": 1,
+      "c": 2,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        3,
+        6,
+        8
+      ]
+    },
+    {
+      "num": 3,
+      "a": "Y2",
+      "b": 2,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        4,
+        5
+      ]
+    },
+    {
+      "num": 4,
+      "a": "Y3",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 5,
+      "a": "Y3",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 6,
+      "a": "Y2",
+      "b": 2,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        7
+      ]
+    },
+    {
+      "num": 7,
+      "a": "Y6",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 8,
+      "a": "Y2",
+      "b": 2,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        9
+      ]
+    },
+    {
+      "num": 9,
+      "a": "Y8",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 10,
+      "a": "P3",
+      "b": 1,
+      "c": 1,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        11
+      ]
+    },
+    {
+      "num": 11,
+      "a": "Y10",
+      "b": 2,
+      "c": 3,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "num": 12,
+      "a": "Y11",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 13,
+      "a": "Y11",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 14,
+      "a": "Y11",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 15,
+      "a": "P4",
+      "b": 1,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        16,
+        19
+      ]
+    },
+    {
+      "num": 16,
+      "a": "Y15",
+      "b": 2,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        17,
+        18
+      ]
+    },
+    {
+      "num": 17,
+      "a": "Y16",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 18,
+      "a": "Y16",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 19,
+      "a": "Y15",
+      "b": 2,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        20,
+        21
+      ]
+    },
+    {
+      "num": 20,
+      "a": "Y19",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 21,
+      "a": "Y19",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 22,
+      "a": "P5",
+      "b": 1,
+      "c": 1,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        23
+      ]
+    },
+    {
+      "num": 23,
+      "a": "Y22",
+      "b": 2,
+      "c": 4,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        24
+      ]
+    },
+    {
+      "num": 24,
+      "a": "Y23",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 25,
+      "a": "P6",
+      "b": 1,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        26,
+        27
+      ]
+    },
+    {
+      "num": 26,
+      "a": "Y25",
+      "b": 2,
+      "c": 2,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 27,
+      "a": "Y25",
+      "b": 2,
+      "c": 2,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        28,
+        29
+      ]
+    },
+    {
+      "num": 28,
+      "a": "Y27",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 29,
+      "a": "Y27",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 30,
+      "a": "P2",
+      "b": 1,
+      "c": 2,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 31,
+      "a": "P3",
+      "b": 1,
+      "c": 1,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        32,
+        35,
+        39
+      ]
+    },
+    {
+      "num": 32,
+      "a": "Y31",
+      "b": 2,
+      "c": 2,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        33,
+        34
+      ]
+    },
+    {
+      "num": 33,
+      "a": "Y32",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 34,
+      "a": "Y32",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 35,
+      "a": "Y31",
+      "b": 2,
+      "c": 4,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        36,
+        37,
+        38
+      ]
+    },
+    {
+      "num": 36,
+      "a": "Y35",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 37,
+      "a": "Y35",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 38,
+      "a": "Y35",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 39,
+      "a": "Y31",
+      "b": 2,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        40
+      ]
+    },
+    {
+      "num": 40,
+      "a": "Y39",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 41,
+      "a": "P5",
+      "b": 1,
+      "c": 1,
+      "d": 4,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        42,
+        43,
+        44,
+        45
+      ]
+    },
+    {
+      "num": 42,
+      "a": "Y41",
+      "b": 2,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 43,
+      "a": "Y41",
+      "b": 2,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 44,
+      "a": "Y41",
+      "b": 2,
+      "c": 2,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 45,
+      "a": "Y41",
+      "b": 2,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 46,
+      "a": "P6",
+      "b": 1,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        47
+      ]
+    },
+    {
+      "num": 47,
+      "a": "Y46",
+      "b": 2,
+      "c": 2,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 48,
+      "a": "P1",
+      "b": 1,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        49
+      ]
+    },
+    {
+      "num": 49,
+      "a": "Y48",
+      "b": 2,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 50,
+      "a": "P2",
+      "b": 1,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        51
+      ]
+    },
+    {
+      "num": 51,
+      "a": "Y50",
+      "b": 2,
+      "c": 4,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        52
+      ]
+    },
+    {
+      "num": 52,
+      "a": "Y51",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 53,
+      "a": "P4",
+      "b": 1,
+      "c": 3,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        54,
+        59,
+        61
+      ]
+    },
+    {
+      "num": 54,
+      "a": "Y53",
+      "b": 2,
+      "c": 2,
+      "d": 4,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        55,
+        56,
+        57,
+        58
+      ]
+    },
+    {
+      "num": 55,
+      "a": "Y54",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 56,
+      "a": "Y54",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 57,
+      "a": "Y54",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 58,
+      "a": "Y54",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 59,
+      "a": "Y53",
+      "b": 2,
+      "c": 4,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        60
+      ]
+    },
+    {
+      "num": 60,
+      "a": "Y59",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 61,
+      "a": "Y53",
+      "b": 2,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        62
+      ]
+    },
+    {
+      "num": 62,
+      "a": "Y61",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 63,
+      "a": "P1",
+      "b": 1,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        64
+      ]
+    },
+    {
+      "num": 64,
+      "a": "Y63",
+      "b": 2,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 65,
+      "a": "P5",
+      "b": 1,
+      "c": 3,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        66,
+        76,
+        82
+      ]
+    },
+    {
+      "num": 66,
+      "a": "Y65",
+      "b": 2,
+      "c": 2,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        67,
+        70,
+        72
+      ]
+    },
+    {
+      "num": 67,
+      "a": "Y66",
+      "b": 3,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        68,
+        69
+      ]
+    },
+    {
+      "num": 68,
+      "a": "Y67",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": true,
+      "children": []
+    },
+    {
+      "num": 69,
+      "a": "Y67",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 70,
+      "a": "Y66",
+      "b": 3,
+      "c": 5,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        71
+      ]
+    },
+    {
+      "num": 71,
+      "a": "Y70",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 72,
+      "a": "Y66",
+      "b": 3,
+      "c": 5,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        73,
+        74,
+        75
+      ]
+    },
+    {
+      "num": 73,
+      "a": "Y72",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 74,
+      "a": "Y72",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 75,
+      "a": "Y72",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 76,
+      "a": "Y65",
+      "b": 2,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        77,
+        79
+      ]
+    },
+    {
+      "num": 77,
+      "a": "Y76",
+      "b": 3,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        78
+      ]
+    },
+    {
+      "num": 78,
+      "a": "Y77",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 79,
+      "a": "Y76",
+      "b": 3,
+      "c": 5,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        80,
+        81
+      ]
+    },
+    {
+      "num": 80,
+      "a": "Y79",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 81,
+      "a": "Y79",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 82,
+      "a": "Y65",
+      "b": 2,
+      "c": 4,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        83,
+        87
+      ]
+    },
+    {
+      "num": 83,
+      "a": "Y82",
+      "b": 3,
+      "c": 3,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        84,
+        85,
+        86
+      ]
+    },
+    {
+      "num": 84,
+      "a": "Y83",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 85,
+      "a": "Y83",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 86,
+      "a": "Y83",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 87,
+      "a": "Y82",
+      "b": 3,
+      "c": 3,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        88,
+        89,
+        90
+      ]
+    },
+    {
+      "num": 88,
+      "a": "Y87",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 89,
+      "a": "Y87",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 90,
+      "a": "Y87",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 91,
+      "a": "P6",
+      "b": 1,
+      "c": 1,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        92
+      ]
+    },
+    {
+      "num": 92,
+      "a": "Y91",
+      "b": 2,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        93
+      ]
+    },
+    {
+      "num": 93,
+      "a": "Y92",
+      "b": 3,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        94,
+        95
+      ]
+    },
+    {
+      "num": 94,
+      "a": "Y93",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": true,
+      "children": []
+    },
+    {
+      "num": 95,
+      "a": "Y93",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 96,
+      "a": "P2",
+      "b": 1,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        97
+      ]
+    },
+    {
+      "num": 97,
+      "a": "Y96",
+      "b": 2,
+      "c": 4,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        98
+      ]
+    },
+    {
+      "num": 98,
+      "a": "Y97",
+      "b": 3,
+      "c": 4,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        99,
+        100
+      ]
+    },
+    {
+      "num": 99,
+      "a": "Y98",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": true,
+      "children": []
+    },
+    {
+      "num": 100,
+      "a": "Y98",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 101,
+      "a": "P4",
+      "b": 1,
+      "c": 2,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        102,
+        104,
+        107
+      ]
+    },
+    {
+      "num": 102,
+      "a": "Y101",
+      "b": 2,
+      "c": 4,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        103
+      ]
+    },
+    {
+      "num": 103,
+      "a": "Y102",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 104,
+      "a": "Y101",
+      "b": 2,
+      "c": 4,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        105,
+        106
+      ]
+    },
+    {
+      "num": 105,
+      "a": "Y104",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 106,
+      "a": "Y104",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 107,
+      "a": "Y101",
+      "b": 2,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        108
+      ]
+    },
+    {
+      "num": 108,
+      "a": "Y107",
+      "b": 3,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 109,
+      "a": "P1",
+      "b": 1,
+      "c": 2,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        110,
+        112
+      ]
+    },
+    {
+      "num": 110,
+      "a": "Y109",
+      "b": 2,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        111
+      ]
+    },
+    {
+      "num": 111,
+      "a": "Y110",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 112,
+      "a": "Y109",
+      "b": 2,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 113,
+      "a": "P4",
+      "b": 1,
+      "c": 2,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        114
+      ]
+    },
+    {
+      "num": 114,
+      "a": "Y113",
+      "b": 2,
+      "c": 4,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        115,
+        122
+      ]
+    },
+    {
+      "num": 115,
+      "a": "Y114",
+      "b": 3,
+      "c": 3,
+      "d": 6,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        116,
+        117,
+        118,
+        119,
+        120,
+        121
+      ]
+    },
+    {
+      "num": 116,
+      "a": "Y115",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 117,
+      "a": "Y115",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 118,
+      "a": "Y115",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 119,
+      "a": "Y115",
+      "b": 4,
+      "c": 4,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 120,
+      "a": "Y115",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 121,
+      "a": "Y115",
+      "b": 4,
+      "c": 6,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 122,
+      "a": "Y114",
+      "b": 3,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        123
+      ]
+    },
+    {
+      "num": 123,
+      "a": "Y122",
+      "b": 4,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 124,
+      "a": "P5",
+      "b": 1,
+      "c": 1,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 125,
+      "a": "P3",
+      "b": 1,
+      "c": 3,
+      "d": 2,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        126,
+        128
+      ]
+    },
+    {
+      "num": 126,
+      "a": "Y125",
+      "b": 2,
+      "c": 3,
+      "d": 1,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        127
+      ]
+    },
+    {
+      "num": 127,
+      "a": "Y126",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 128,
+      "a": "Y125",
+      "b": 2,
+      "c": 2,
+      "d": 3,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": [
+        129,
+        130,
+        131
+      ]
+    },
+    {
+      "num": 129,
+      "a": "Y128",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 130,
+      "a": "Y128",
+      "b": 3,
+      "c": 5,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    },
+    {
+      "num": 131,
+      "a": "Y128",
+      "b": 3,
+      "c": 3,
+      "d": 0,
+      "choice": "",
+      "result": "",
+      "quiz": false,
+      "children": []
+    }
+  ],
+  "stats": {
+    "x_count": 1,
+    "p_count": 6,
+    "y_count": 131,
+    "end_count": 74,
+    "node_total": 212,
+    "max_depth": 4,
+    "avg_depth": 2.5877862595419847,
+    "depth_variance": 0.9751180001165434,
+    "depth_std": 0.9874806327804831,
+    "avg_branch": 0.8320610687022901,
+    "max_branch": 6,
+    "avg_entry": 3.6666666666666665,
+    "entry_min": 3,
+    "entry_max": 4
+  },
+  "validation": {
+    "ok": true,
+    "errors": []
+  }
+}
