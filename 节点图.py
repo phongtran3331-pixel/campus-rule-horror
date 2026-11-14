@@ -119,7 +119,7 @@ SCENE_PRESETS: "Dict[str, ScenePreset]" = {
     "超市":     ScenePreset(2, 2, 1, 2, 2, ("售货机", "食品货架", "工具角", "冷柜", "收银台"), True),
     "校医院":   ScenePreset(2, 2, 1, 2, 2, ("药房", "输液室", "诊室", "处置室", "病历柜"), True),
     # ---------- 体育馆（原默认示例，8 子节点固定） ----------
-    "体育馆":   ScenePreset(3, 3, 3, 3, 3, ("器械区", "羽毛球场", "篮球场", "乒乓球台", "看台", "更衣室", "器材室", "走廊"), True, "原默认场景"),
+    "体育馆":   ScenePreset(2, 2, 1, 2, 2, ("器械区", "羽毛球场", "篮球场", "乒乓球台", "看台", "更衣室", "器材室", "走廊"), True, "少节点版（创作试点用，原 634 节点版见 git 历史）"),
     # ---------- 重点调试：教学楼（多） ----------
     "教学楼A": ScenePreset(4, 3, 3, 3, 3, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
     "教学楼B": ScenePreset(4, 3, 3, 3, 3, ("一楼大厅", "101教室", "102教室", "103教室", "201教室", "202教室", "阶梯教室", "实验室", "楼梯间", "天台", "洗手间", "走廊尽头", "教师办公室"), False, "怪谈密度高"),
@@ -789,7 +789,7 @@ def _write(path: str, content: str) -> None:
         f.write(content)
 
 
-def _gen_one(scene: str, preset: ScenePreset, args: argparse.Namespace, seed: int, out_dir: str) -> Tuple[Stats, List[str]]:
+def _gen_one(scene: str, preset: ScenePreset, args: argparse.Namespace, seed: int, out_dir: str) -> Tuple[Stats, List[str], "CampusTreeGenerator"]:
     """按预设生成单场景并落盘，返回 (统计, 校验错误)。"""
     lv = preset.levels()
     params = GenParams(
@@ -821,7 +821,7 @@ def _gen_one(scene: str, preset: ScenePreset, args: argparse.Namespace, seed: in
     _write(os.path.join(out_dir, "campus_params.txt"), render_params(gen))
     _write(os.path.join(out_dir, "campus_stats.txt"), render_stats(gen, stats, errors))
     _write(os.path.join(out_dir, "campus_tree.json"), render_json(gen, stats, errors))
-    return stats, errors
+    return stats, errors, gen
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -855,14 +855,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     for scene, preset, seed in targets:
         out_dir = os.path.join(args.out_dir, scene) if args.all else args.out_dir
         try:
-            stats, errors = _gen_one(scene, preset, args, seed, out_dir)
+            stats, errors, gen = _gen_one(scene, preset, args, seed, out_dir)
         except ValueError as exc:
             ap.error(str(exc))
         all_ok = all_ok and not errors
+        n_quiz = sum(1 for y in gen.ys.values() if y.quiz)
         summary.append(
             f"{scene:<4} seed={seed}  X={stats.x_count} P={stats.p_count} Y={stats.y_count} END={stats.end_count} "
-            f"总节点={stats.node_total} 均深={stats.avg_depth:.2f} 均出度={stats.avg_branch:.2f} 均初度={stats.avg_entry:.2f} "
-            f"{'通过' if not errors else f'失败({len(errors)})'}"
+            f"答题={n_quiz} 总节点={stats.node_total} 均深={stats.avg_depth:.2f} 均出度={stats.avg_branch:.2f} "
+            f"均初度={stats.avg_entry:.2f} {'通过' if not errors else f'失败({len(errors)})'}"
         )
         print(f"[校园怪谈] {scene}  seed={seed}  P={stats.p_count}  Y={stats.y_count}  "
               f"{'校验通过' if not errors else f'校验失败 {len(errors)} 项'}")
