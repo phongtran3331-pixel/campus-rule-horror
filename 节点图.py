@@ -103,6 +103,7 @@ class ScenePreset:
     pool: Tuple[str, ...]          # P 节点（探索子位置）名称池
     fixed: bool = False            # True = 子节点数固定为 len(pool)
     note: str = ""
+    quiz_fix: Tuple[int, ...] = ()  # 强制指定为答题节点的 Y 编号（须为叶，非叶则子节点上提到父级）
 
     def levels(self) -> Dict[str, int]:
         return {"np": self.np_level, "depth": self.depth_level, "var": self.var_level,
@@ -128,7 +129,7 @@ SCENE_PRESETS: "Dict[str, ScenePreset]" = {
     "图书馆":   ScenePreset(3, 4, 2, 3, 3, ("门禁闸机", "文学区", "理科区", "报刊角", "自习区", "古籍室", "还书台", "书架深处"), False),
     # ---------- 重点调试：行政楼 / 学校大门 / 小树林（少） ----------
     "行政楼":   ScenePreset(2, 3, 2, 2, 2, ("一楼大厅", "影像室", "网络中心", "档案室", "教务处", "楼梯间"), False),
-    "学校大门": ScenePreset(1, 2, 2, 1, 1, ("门楼", "保安室", "传达室", "公告栏", "人行道闸"), False),
+    "学校大门": ScenePreset(1, 2, 2, 1, 1, ("门楼", "保安室", "传达室", "公告栏", "人行道闸"), False, "动态题试点：Y5 保安反问强制为答题节点", (5,)),
     "小树林":   ScenePreset(2, 3, 3, 2, 2, ("石板路口", "凉亭", "歪脖子树", "深处空地", "长椅", "灌木丛"), False, "新增场景"),
 }
 
@@ -257,6 +258,7 @@ class CampusTreeGenerator:
         scene_name: str = "",
         pool: Tuple[str, ...] = (),
         fixed_children: bool = False,
+        quiz_fix: Tuple[int, ...] = (),
     ) -> None:
         self.params = params
         self.cons = cons
@@ -266,6 +268,7 @@ class CampusTreeGenerator:
         self.scene_name = scene_name
         self.pool = list(pool)
         self.fixed_children = fixed_children
+        self.quiz_fix = tuple(quiz_fix)
 
         self.xs: Dict[int, XNode] = {}
         self.ps: Dict[int, PNode] = {}
@@ -445,7 +448,24 @@ class CampusTreeGenerator:
 
     def _mark_quiz(self) -> None:
         """标记答题节点：必须是叶 Y 且深度 >= 2；密度约每 10 个 Y 一个，
-        全场景至多 3 个；尽量分散在不同 P 子位置下（先来先占深度大的）。"""
+        全场景至多 3 个；尽量分散在不同 P 子位置下（先来先占深度大的）。
+        预设强制指定的节点（quiz_fix）优先处理：非叶则把子节点上提到父级。"""
+        forced: List[YNode] = []
+        for num in self.quiz_fix:
+            y = self.ys.get(num)
+            if y is None:
+                continue
+            if y.children:  # 子节点上提到父级，本节点原地变叶
+                parent = self.ps[y.parent] if y.parent_kind == "P" else self.ys[y.parent]
+                for cid in y.children:
+                    child = self.ys[cid]
+                    child.parent = y.parent
+                    child.parent_kind = y.parent_kind
+                    child.depth = y.depth  # 上提一层，深度与父级衔接
+                    parent.children.append(cid)
+                y.children = []
+            y.quiz = True
+            forced.append(y)
         n_target = min(3, len(self.ys) // 10)
         if n_target <= 0:
             return
@@ -453,11 +473,13 @@ class CampusTreeGenerator:
             (y for y in self.ys.values() if not y.children and y.depth >= 2),
             key=lambda y: -y.depth,
         )
-        chosen: List[YNode] = []
-        used_p: set = set()
+        chosen: List[YNode] = list(forced)  # 强制节点先占额度
+        used_p: set = {self._p_ancestor(y) for y in forced}
         for y in cands:  # 第一轮：每个 P 下只选一个
             if len(chosen) >= n_target:
                 break
+            if y.quiz:
+                continue
             p = self._p_ancestor(y)
             if p in used_p:
                 continue
@@ -813,6 +835,7 @@ def _gen_one(scene: str, preset: ScenePreset, args: argparse.Namespace, seed: in
     gen = CampusTreeGenerator(
         params, cons, root_x=args.root_x, seed=seed,
         scene_name=scene, pool=preset.pool, fixed_children=preset.fixed and not args.custom,
+        quiz_fix=preset.quiz_fix,
     ).build()
     errors = validate(gen)
     stats = compute_stats(gen)

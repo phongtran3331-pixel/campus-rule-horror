@@ -77,7 +77,7 @@
       "a": "Y1",
       "b": 2,
       "c": 3,
-      "d": 4,
+      "d": 5,
       "choice": "",
       "result": "",
       "quiz": false,
@@ -85,7 +85,8 @@
         3,
         5,
         7,
-        10
+        10,
+        6
       ]
     },
     {
@@ -109,7 +110,7 @@
       "d": 0,
       "choice": "",
       "result": "",
-      "quiz": true,
+      "quiz": false,
       "children": []
     },
     {
@@ -117,18 +118,16 @@
       "a": "Y2",
       "b": 3,
       "c": 5,
-      "d": 1,
+      "d": 0,
       "choice": "",
       "result": "",
-      "quiz": false,
-      "children": [
-        6
-      ]
+      "quiz": true,
+      "children": []
     },
     {
       "num": 6,
-      "a": "Y5",
-      "b": 4,
+      "a": "Y2",
+      "b": 3,
       "c": 5,
       "d": 0,
       "choice": "",
@@ -201,14 +200,14 @@
     "x_count": 1,
     "p_count": 1,
     "y_count": 11,
-    "end_count": 5,
-    "node_total": 18,
+    "end_count": 6,
+    "node_total": 19,
     "max_depth": 4,
-    "avg_depth": 3.1818181818181817,
-    "depth_variance": 0.8760330578512396,
-    "depth_std": 0.9359663764533637,
+    "avg_depth": 3.090909090909091,
+    "depth_variance": 0.8099173553719008,
+    "depth_std": 0.899954085146515,
     "avg_branch": 0.9090909090909091,
-    "max_branch": 4,
+    "max_branch": 5,
     "avg_entry": 1.0,
     "entry_min": 1,
     "entry_max": 1
