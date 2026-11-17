@@ -1,0 +1,77 @@
+{
+ "gym": {
+  "name": "体育馆",
+  "situations": 8,
+  "events": 159
+ },
+ "recycle": {
+  "name": "回收站",
+  "situations": 2,
+  "events": 3
+ },
+ "library": {
+  "name": "图书馆",
+  "situations": 7,
+  "events": 20
+ },
+ "gate": {
+  "name": "学校大门",
+  "situations": 3,
+  "events": 24
+ },
+ "community": {
+  "name": "学生社区",
+  "situations": 6,
+  "events": 13
+ },
+ "dorm": {
+  "name": "宿舍",
+  "situations": 1,
+  "events": 2
+ },
+ "woods": {
+  "name": "小树林",
+  "situations": 3,
+  "events": 12
+ },
+ "field": {
+  "name": "操场",
+  "situations": 1,
+  "events": 3
+ },
+ "tA": {
+  "name": "教学楼A",
+  "situations": 6,
+  "events": 17
+ },
+ "tB": {
+  "name": "教学楼B",
+  "situations": 6,
+  "events": 17
+ },
+ "tC": {
+  "name": "教学楼C",
+  "situations": 6,
+  "events": 16
+ },
+ "clinic": {
+  "name": "校医院",
+  "situations": 1,
+  "events": 3
+ },
+ "admin": {
+  "name": "行政楼",
+  "situations": 4,
+  "events": 19
+ },
+ "market": {
+  "name": "超市",
+  "situations": 1,
+  "events": 6
+ },
+ "canteen": {
+  "name": "食堂",
+  "situations": 1,
+  "events": 5
+ }
+}

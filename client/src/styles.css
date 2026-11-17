@@ -386,3 +386,27 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .eo-actions { margin-top: 0; }
 
 /* deployed via GitHub Actions */
+
+/* ============ 场景文本渲染（M6） ============ */
+.sv { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.sv-empty { color: var(--dim); font-size: 13px; }
+.sv-look { background: #0d131c; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.sv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sv-chip { background: #16202e; border: 1px solid var(--line); color: #9fb0c4; padding: 4px 10px; border-radius: 20px; font-size: 12px; }
+.sv-chip:hover { border-color: var(--teal); color: #d5ecf5; }
+.sv-look-text { margin: 8px 0 2px; line-height: 1.9; font-size: 13px; color: #b8c2d0; }
+.sv-events { display: flex; flex-direction: column; gap: 6px; }
+.sv-event { text-align: left; background: #101823; border: 1px solid var(--line); border-left: 3px solid #24405a; color: #cfd9e4; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; line-height: 1.6; }
+.sv-event:hover:not(:disabled) { border-left-color: var(--teal); background: #132031; }
+.sv-event:disabled { opacity: 0.45; }
+.sv-quiz { background: #141018; border: 1px solid #3a2f4a; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sv-quiz-q { color: #e8ddf5; font-size: 14.5px; line-height: 1.7; margin: 0; }
+.sv-quiz-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sv-quiz-rule { color: #6f6285; font-size: 11px; margin: 0; }
+.sv-result { background: #0e1a16; border: 1px solid #1f4a3d; border-radius: 10px; padding: 12px; animation: svfade 0.5s ease; }
+.sv-result.taken { background: #1a1512; border-color: #4a3a1f; }
+.sv-result-text { line-height: 1.9; font-size: 13.5px; color: #cfe3d8; margin: 0 0 6px; white-space: pre-wrap; }
+.sv-grants { color: #7fd7a8; font-size: 12.5px; margin: 0 0 4px; }
+.sv-states { color: #8fb6d9; font-size: 12.5px; margin: 0; }
+.sv-fake { color: #8a7f9e; font-size: 12px; margin: 6px 0 0; font-style: italic; }
+@keyframes svfade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

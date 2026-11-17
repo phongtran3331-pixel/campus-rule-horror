@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
 import { MapView } from "./MapView";
+import { SceneView } from "./SceneView";
 
 interface Props {
   room: GameRoom;
@@ -148,8 +149,11 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
 
       <p className="eo-desc">{node.desc}</p>
 
+      {/* M6：真实场景文本（环视 + 事件 + 结算） */}
+      <SceneView room={room} nodeId={at} />
+
       <div className="row wrap eo-actions">
-        <Btn label="探索（1 AP）" onClick={() => send("explore")} />
+        <Btn label="翻找杂物（1 AP）" onClick={() => send("explore")} />
         {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
         {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
         {at === "market" && <Btn label="买食物（5币）" onClick={() => send("buy", { item: "food" })} />}
