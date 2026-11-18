@@ -438,3 +438,18 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .sv-op-btn { background: #2c2140; border: 1px solid #4a3a68; color: #d5c8ea; padding: 9px 12px; border-radius: 8px; font-size: 14px; text-align: left; }
 .sv-op-btn:hover { background: #3a2c55; border-color: #6a549a; }
 
+/* ATTO_page 主页（项目统一入口） */
+.hub-back { position: absolute; top: 18px; left: 20px; background: none; border: none; color: var(--dim); font-size: 13px; cursor: pointer; padding: 6px 8px; }
+.hub-back:hover { color: #d5c8ea; }
+.lobby { position: relative; }
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; width: min(860px, 92vw); margin: 26px auto 0; }
+.hub-card { text-align: left; background: #171221; border: 1px solid #33284a; border-radius: 14px; padding: 20px; color: inherit; cursor: default; display: flex; flex-direction: column; gap: 8px; }
+.hub-card h2 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+.hub-card p { margin: 0; color: #9a8cb5; font-size: 13.5px; line-height: 1.7; }
+.hub-card-tag { align-self: flex-start; font-size: 11px; letter-spacing: 2px; color: #6f6285; border: 1px solid #3a2f4a; border-radius: 999px; padding: 3px 10px; }
+.hub-card.live { cursor: pointer; border-color: #4a3a68; transition: transform .15s ease, border-color .15s ease; }
+.hub-card.live:hover { transform: translateY(-3px); border-color: #8a6fc0; }
+.hub-card.live .hub-card-tag { color: #7fd7a8; border-color: #2f6b57; }
+.hub-card-go { margin-top: 6px; color: #b39ddb; font-size: 14px; }
+.hub-card.soon { opacity: .55; }
+

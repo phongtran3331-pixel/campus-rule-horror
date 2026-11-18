@@ -1,8 +1,8 @@
 {
-  "name": "campus-rule-horror",
+  "name": "atto-page",
   "version": "0.1.0",
   "private": true,
-  "description": "校园规则怪谈：自管委 —— 多人联网规则怪谈生存游戏",
+  "description": "ATTO_page —— 个人项目主页（校园规则怪谈等多项目入口）",
   "workspaces": [
     "server",
     "client"

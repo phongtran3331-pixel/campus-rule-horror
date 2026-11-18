@@ -28,17 +28,57 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [debugRoom, setDebugRoom] = useState(false);
+  const [view, setView] = useState<"hub" | "lobby">("hub");
   const enter = (r: GameRoom, debug: boolean) => { setDebugRoom(debug); setRoom(r); };
   return (
     <ErrorBoundary>
-      {room ? <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} /> : <Lobby onEnter={enter} />}
+      {room ? (
+        <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} />
+      ) : view === "hub" ? (
+        <Hub onEnter={() => setView("lobby")} />
+      ) : (
+        <Lobby onEnter={enter} onBack={() => setView("hub")} />
+      )}
     </ErrorBoundary>
+  );
+}
+
+// ---------- 主页（ATTO_page：各项目统一入口） ----------
+
+function Hub({ onEnter }: { onEnter: () => void }) {
+  return (
+    <div className="lobby">
+      <header className="lobby-head">
+        <span className="lobby-badge">ATTO_PAGE</span>
+        <h1 className="lobby-title">ATTO_page</h1>
+        <p className="lobby-sub">我的项目主页 —— <em>从这里出发</em></p>
+      </header>
+
+      <div className="hub-grid">
+        <button className="hub-card live" onClick={onEnter}>
+          <span className="hub-card-tag">联机游戏 · 可玩</span>
+          <h2>校园规则怪谈</h2>
+          <p>自管委在看着你 —— 多人联网规则怪谈生存。开房间，邀好友，遵守规则活到最后。</p>
+          <span className="hub-card-go">进入 ›</span>
+        </button>
+        <div className="hub-card soon">
+          <span className="hub-card-tag">筹备中</span>
+          <h2>2521 学习网站</h2>
+          <p>正在搬运中，敬请期待。</p>
+        </div>
+        <div className="hub-card soon">
+          <span className="hub-card-tag">虚位以待</span>
+          <h2>更多项目</h2>
+          <p>下一个想做什么？</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ---------- 大厅 ----------
 
-function Lobby({ onEnter }: { onEnter: (r: GameRoom, debug: boolean) => void }) {
+function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => void; onBack: () => void }) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"male" | "female">("male");
   const [code, setCode] = useState("");
@@ -65,6 +105,7 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom, debug: boolean) => void }) 
 
   return (
     <div className="lobby">
+      <button className="hub-back" onClick={onBack}>‹ ATTO_page 主页</button>
       <header className="lobby-head">
         <span className="lobby-badge">CAMPUS RULE HORROR</span>
         <h1 className="lobby-title">校园规则怪谈</h1>
