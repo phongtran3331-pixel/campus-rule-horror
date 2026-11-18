@@ -66,8 +66,8 @@ export function Terminal(props: Props) {
           <span>Day {day} · {PHASE_LABEL[phase] ?? phase}</span>
         </button>
         <span className="t-pos">📍 {nodeName}</span>
-        <button className={`t-chip t-statchip${showStats ? " on" : ""}`} onClick={() => setShowStats((v) => !v)}>
-          {props.netDown ? "📵" : "📶"} 状态
+        <button className={`t-chip t-statchip${showStats ? " on" : ""}${props.netDown ? " netdown" : ""}`} onClick={() => setShowStats((v) => !v)}>
+          {props.netDown ? "📵 断网" : "📶 状态"}
         </button>
       </div>
 

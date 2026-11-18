@@ -210,11 +210,7 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
         />
       )}
       {gameover && (
-        <div className={`gameover ${gameover.winner}`}>
-          <h2>{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</h2>
-          <p>{gameover.detail}</p>
-          <p className="sub">{gameover.reason} · 理事长：{gameover.chairs.join("、") || "无"} · 存活干事：{gameover.students.join("、") || "无"}</p>
-        </div>
+        <GameOverPanel gameover={gameover} players={players} myId={room.sessionId} />
       )}
       <div className="main phone-main">
         <div className="phone-col">
@@ -269,6 +265,50 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
         />
       )}
       <button className="leave" onClick={onLeave}>离开</button>
+    </div>
+  );
+}
+
+
+/** 结算页：胜负公告 + 身份公示 + 全员归宿 */
+function GameOverPanel({ gameover, players, myId }: {
+  gameover: GameOverMsg;
+  players: Array<[string, Player]>;
+  myId: string;
+}) {
+  // 以名字对应身份（服务端按名字公示）
+  const nameSet = (names: string[]) => new Set(names);
+  const chairNames = nameSet(gameover.chairs);
+  const aliveStudentNames = nameSet(gameover.students);
+  const rows = players.map(([id, q]) => ({
+    id, name: q.name,
+    isChair: chairNames.has(q.name),
+    alive: q.alive,
+    survivedAsStudent: aliveStudentNames.has(q.name),
+    isMe: id === myId,
+  }));
+  return (
+    <div className={`gameover ${gameover.winner}`}>
+      <span className="go-badge">{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</span>
+      <h2>{gameover.detail}</h2>
+      <p className="go-reason">{gameover.reason}</p>
+
+      <div className="go-table">
+        {rows.map((r) => (
+          <div key={r.id} className={`go-row${r.isChair ? " chair" : ""}${r.alive ? "" : " dead"}`}>
+            <span className="go-name">{r.name}{r.isMe ? "（你）" : ""}</span>
+            <span className="go-fate">
+              {r.isChair ? "理事长" : r.alive ? (r.survivedAsStudent ? "存活干事" : "干事") : "干事"}
+            </span>
+            <span className="go-status">{r.alive ? "在册" : "已出局"}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="go-sub">
+        理事长：{gameover.chairs.join("、") || "无"} ｜ 存活干事：{gameover.students.join("、") || "无"}
+      </p>
+      <button className="btn-primary" onClick={() => location.reload()}>返回 ATTO_page 主页</button>
     </div>
   );
 }
