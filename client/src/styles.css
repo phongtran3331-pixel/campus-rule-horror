@@ -8,16 +8,36 @@
   --teal: #3aa8a0;
   --red: #b0503c;
   --amber: #b08a3c;
+  --font-title: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+  --font-body: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
 }
 #root { max-width: 1180px; margin: 0 auto; padding: 12px; }
 h1 { font-size: 26px; letter-spacing: 2px; }
+
+/* 标题字体（恐怖叙事氛围）：游戏名/阶段名/结算徽章等 */
+.lobby-title, .phase-name, .go-badge, .eo-title, .t-clock, .hub-card h2 { font-family: var(--font-title); }
+
+/* 全局动效：交互反馈更顺滑 */
+button { transition: background .15s ease, border-color .15s ease, transform .12s ease, opacity .15s ease; }
+.sv-result { animation: fade-up .3s ease both; }
+.sv-quiz { animation: fade-up .25s ease both; }
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* 桌面阶段直达入口 */
+.t-cta { display: block; width: 100%; margin: 10px 0 2px; padding: 12px 14px; border-radius: 10px;
+  background: #1c2836; border: 1px solid var(--teal); color: #bfe8e4; font-size: 14.5px; text-align: left; }
+.t-cta:hover { background: #22344a; transform: translateY(-1px); }
+.t-cta.vote { border-color: var(--amber); color: #ecd9ae; }
+.t-cta.vote:hover { background: #2c2a1e; }
+.t-cta.chair { border-color: var(--red); color: #e8b3a8; }
+.t-cta.chair:hover { background: #33201c; }
 h3 { font-size: 14px; margin-bottom: 6px; color: var(--dim); font-weight: 600; }
 button {
   background: var(--teal); color: #0e1514; border: 0; border-radius: 6px;

@@ -74,11 +74,11 @@ export function Terminal(props: Props) {
       {/* 状态面板（点右上「状态」展开） */}
       {showStats && me && (
         <div className="t-stats">
-          <Stat label="HP" v={me.hp} max={100} cls="hp" />
-          <Stat label="SAN" v={me.san} max={100} cls="san" />
-          <Stat label="AP" v={me.ap} max={15} cls="ap" />
-          <Stat label="饥饿" v={me.hunger} max={100} cls="hunger" />
-          <Stat label="币" v={me.coins} max={100} cls="coins" showNum />
+          <Stat label="❤️ HP" v={me.hp} max={100} cls="hp" />
+          <Stat label="🧠 SAN" v={me.san} max={100} cls="san" />
+          <Stat label="⚡ AP" v={me.ap} max={15} cls="ap" />
+          <Stat label="🍚 饥饿" v={me.hunger} max={100} cls="hunger" />
+          <Stat label="🪙 币" v={me.coins} max={100} cls="coins" showNum />
         </div>
       )}
 
@@ -87,6 +87,16 @@ export function Terminal(props: Props) {
         {app === null ? (
           <>
             <div className="t-clock">{endsAt > 0 && phase !== "lobby" ? clock : vtime}</div>
+            {/* 阶段直达入口：当前最重要的事放桌面顶部 */}
+            {phase === "noon" && day > 0 && (
+              <button className="t-cta vote" onClick={() => setApp("explore")}>🗳️ 午间投票进行中 — 点我前往</button>
+            )}
+            {phase === "night" && props.myFaction === "chair" && (
+              <button className="t-cta chair" onClick={() => setApp("explore")}>🎯 理事长夜间行动 — 点我前往</button>
+            )}
+            {phase === "evening" && !props.netDown && (
+              <button className="t-cta" onClick={() => setApp("explore")}>🌆 21:00 前务必返回宿舍</button>
+            )}
             <div className="t-grid">
               {APPS.map((a) => (
                 <button key={a.id} className="t-app" onClick={() => setApp(a.id)}>

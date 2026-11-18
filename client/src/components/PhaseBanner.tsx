@@ -4,6 +4,10 @@ const NAMES: Record<string, string> = {
   lobby: "大厅", morning: "上午", noon: "中午 · 讨论投票",
   afternoon: "下午", evening: "晚上", night: "深夜", ended: "已结束",
 };
+const ICONS: Record<string, string> = {
+  lobby: "🏫", morning: "🌅", noon: "🍽️", afternoon: "🌤️",
+  evening: "🌆", night: "🌙", ended: "🏁",
+};
 
 export function PhaseBanner({ day, phase, endsAt }: { day: number; phase: string; endsAt: number }) {
   const [, tick] = useState(0);
@@ -17,8 +21,8 @@ export function PhaseBanner({ day, phase, endsAt }: { day: number; phase: string
   return (
     <div className="phase">
       <span>Day {day}</span>
-      <span className="phase-name">{NAMES[phase] ?? phase}</span>
-      {endsAt > 0 && phase !== "lobby" && <span className="clock">{mm}:{ss}</span>}
+      <span className="phase-name">{ICONS[phase] ?? "🕐"} {NAMES[phase] ?? phase}</span>
+      {endsAt > 0 && phase !== "lobby" && <span className="clock">⏳ {mm}:{ss}</span>}
     </div>
   );
 }

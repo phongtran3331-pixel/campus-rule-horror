@@ -123,6 +123,18 @@ export class GameRoom extends Room<GameState> {
   }
 
   onJoin(client: Client, options: JoinOptions) {
+    // 对局进行中：仅允许重连（sessionId 已有角色）；新来访者直接请出
+    if (this.state.phase !== "lobby") {
+      if (!this.state.players.has(client.sessionId)) {
+        this.sendNoticeTo(client.sessionId, "对局进行中，无法中途加入。");
+        client.leave();
+        return;
+      }
+      const old = this.state.players.get(client.sessionId)!;
+      old.connected = true;
+      this.broadcast("notice", { text: `${old.name} 重新连线` });
+      return;
+    }
     const p = new Player();
     p.name = String(options.name || `同学${this.state.players.size + 1}`).slice(0, 12);
     p.gender = options.gender === "female" ? "female" : "male";
@@ -131,7 +143,7 @@ export class GameRoom extends Room<GameState> {
     this.broadcast("notice", { text: `${p.name} 进入了校园（${this.state.players.size} 人在线）` });
   }
 
-  onLeave(client: Client) {
+  onLeave(client: Client, consented?: boolean) {
     const p = this.state.players.get(client.sessionId);
     if (this.state.phase === "lobby") {
       this.state.players.delete(client.sessionId);
@@ -141,6 +153,18 @@ export class GameRoom extends Room<GameState> {
       }
     } else if (p) {
       p.connected = false; // 游戏中掉线保留角色
+      // 非主动离开（掉线/刷新）给 90 秒重连窗口，重连即恢复原角色
+      if (!consented && p.alive) {
+        this.allowReconnection(client, 90)
+          .then(() => {
+            const cur = this.state.players.get(client.sessionId);
+            if (cur && !cur.connected) {
+              cur.connected = true;
+              this.broadcast("notice", { text: `${cur.name} 重新连线` });
+            }
+          })
+          .catch(() => { /* 超时未归，角色保留但离线 */ });
+      }
     }
   }
 
