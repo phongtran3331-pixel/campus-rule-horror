@@ -127,6 +127,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
   const send = (type: string, msg?: unknown) => room.send(type, msg);
   const at = node.id;
   const [imgOk, setImgOk] = useState(true);
+  const [logOpen, setLogOpen] = useState(false);
   return (
     <div className="eo-card eo-node">
       <div className="eo-node-head">
@@ -165,10 +166,14 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
         {at === "admin" && (
           <>
             <Btn label="调监控" onClick={() => send("camera")} />
-            <Btn label="调阅设施记录（🪪1）" onClick={() => {
-              const f = window.prompt("设施名：超市售货机 / 校医院药房 / 图书馆闸机 / 操场闸机 / 体育馆闸机 / 社区闸机 / 行政楼影像室 / 网络中心");
-              if (f) send("inspectLog", { facility: f.trim() });
-            }} />
+            <Btn label="调阅设施记录（🪪1）" onClick={() => setLogOpen((v) => !v)} />
+            {logOpen && (
+              <div className="vp-list log-facilities">
+                {["超市售货机", "校医院药房", "图书馆闸机", "操场闸机", "体育馆闸机", "社区闸机", "行政楼影像室", "网络中心"].map((f) => (
+                  <button key={f} className="vp-pick" onClick={() => { send("inspectLog", { facility: f }); setLogOpen(false); }}>{f}</button>
+                ))}
+              </div>
+            )}
             {me.scissors > 0 && !netDown && <Btn label="剪网线" danger onClick={() => send("cutNet")} />}
             {netDown && <Btn label="修复网线（1 AP）" onClick={() => send("repairNet")} />}
           </>

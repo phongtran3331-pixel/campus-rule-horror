@@ -482,6 +482,10 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .cp-status b { color: #e8b96a; }
 .cp-sec { display: flex; flex-direction: column; gap: 8px; }
 .cp-hint { margin: 0; color: #6f6285; font-size: 12.5px; }
+/* 私聊表单 + 社区功能页 */
+.dm-form { display: flex; flex-direction: column; gap: 8px; width: 100%; border-top: 1px dashed #3a2f4a; padding-top: 10px; }
+.bk { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.log-facilities { width: 100%; }
 .act.ghost { background: none; border: 1px solid #3a2f4a; color: #6f6285; }
 .act.ghost:hover { color: #cfc3e3; border-color: #6a549a; }
 

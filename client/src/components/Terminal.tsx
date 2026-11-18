@@ -130,31 +130,13 @@ function renderApp(app: AppId, p: Props): ReactNode {
   const { room, me, myFaction, phase, day, players, msgs, onSendChat, init, chairs } = p;
   if (!me) return null;
   const send = (type: string, msg?: unknown) => room.send(type, msg);
-  const at = me.nodeId;
-  const askTarget = (title: string): string | null => {
-    const list = players.filter(([, q]) => q.alive);
-    const input = window.prompt(`${title}\n${list.map(([, q], i) => `${i + 1}. ${q.name}`).join("  ")}`, "1");
-    const i = Number(input) - 1;
-    return list[i] ? list[i][0] : null;
-  };
 
   switch (app) {
     case "bag":
       return <BagGrid me={me} room={room} />;
 
     case "chat":
-      return (
-        <>
-          <div className="chat-log t-fill">
-            {msgs.filter((m) => m.kind !== "notice").map((m, i) => (
-              <div key={i} className={m.kind}>
-                {m.kind === "chat" ? <><b>{m.from}：</b>{m.text}</> : <i className="dm">{m.from} 私信：{m.text}</i>}
-              </div>
-            ))}
-          </div>
-          <ChatInput onSend={onSendChat} />
-        </>
-      );
+      return <ChatPanel msgs={msgs} onSendChat={onSendChat} room={room} players={players} meId={room.sessionId} />;
 
     case "wall":
       return (
@@ -179,31 +161,7 @@ function renderApp(app: AppId, p: Props): ReactNode {
       );
 
     case "explore":
-      return (
-        <div className="row wrap">
-          <button className="btn-primary eo-open" onClick={() => p.onOpenExplore()}>打开校园地图</button>
-          {me.medicine > 0 && (
-            <>
-              <Btn label="服药 · 恢复 HP" onClick={() => send("useMedicine", { kind: "hp" })} />
-              <Btn label="服药 · 恢复 SAN" onClick={() => send("useMedicine", { kind: "san" })} />
-            </>
-          )}
-          <Btn label="私聊 / 转账" onClick={() => {
-            const t = askTarget("私聊谁？");
-            if (!t) return;
-            const text = window.prompt("内容（可空）") ?? "";
-            const coins = Number(window.prompt("转账金额（可 0）") ?? 0);
-            send("dm", { targetId: t, text, coins: Number.isFinite(coins) ? coins : 0 });
-          }} />
-          {phase === "noon" && day > 0 && (
-            <VotePanel room={room} me={me} players={players} chairs={chairs} />
-          )}
-          {phase === "night" && myFaction === "chair" && (
-            <ChairPanel room={room} me={me} players={players} chairs={chairs}
-              board={init?.ruleBoard ?? []} pool={p.rulePool} accuse={p.accuse} />
-          )}
-        </div>
-      );
+      return <ExplorePanel p={p} />;
 
     case "notes":
       return (
@@ -220,35 +178,7 @@ function renderApp(app: AppId, p: Props): ReactNode {
       );
 
     case "booking":
-      if (at !== "community") return <p className="t-empty">请前往学生社区后使用本功能。</p>;
-      if (myFaction !== "student") return <p className="t-empty">理事长无需预约。</p>;
-      return (
-        <div className="row wrap">
-          <Btn label="预约上午段" onClick={() => send("bookSlot", { slot: "am" })} />
-          <Btn label="预约下午段" onClick={() => send("bookSlot", { slot: "pm" })} />
-          <Btn label="办公室 · 查档案" onClick={() => {
-            const a = askTarget("档案：第一人编号");
-            if (!a) return;
-            const b = askTarget("档案：第二人编号");
-            if (b) send("officeArchive", { aId: a, bId: b });
-          }} />
-          <Btn label="社区部 · 预约记录" onClick={() => send("deptBookings")} />
-          <Btn label="策创部 · 抹除规矩" onClick={() => {
-            const ruleId = window.prompt("输入要抹除的规矩编号（如 R3）");
-            if (ruleId) send("cceErase", { ruleId: ruleId.trim().toUpperCase() });
-          }} />
-          <Btn label="宣传部 · 破译规矩" onClick={() => send("press", { action: "decode" })} />
-          <Btn label="宣传部 · 表彰" onClick={() => {
-            const t = askTarget("表彰谁？");
-            if (t) send("press", { action: "commend", targetId: t });
-          }} />
-          <Btn label="宣传部 · 匿名担保" onClick={() => {
-            const t = askTarget("担保谁？");
-            if (t) send("press", { action: "guarantee", targetId: t });
-          }} />
-          <Btn label="咖啡屋（☕1）" onClick={() => send("cafe", { kind: "hp" })} />
-        </div>
-      );
+      return <BookingApp p={p} />;
 
     case "profile": {
       return (
@@ -499,6 +429,174 @@ function ChairPanel({ room, me, players, chairs, board, pool, accuse }: {
             <button className="act ghost" onClick={() => { setOutId(null); setInId(null); }}>今晚不修正</button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+/** 通用：存活玩家单选名单（替代 window.prompt 输编号） */
+function PlayerPicker({ players, meId, sel, onSel }: {
+  players: Array<[string, Player]>; meId: string; sel: string | null; onSel: (id: string) => void;
+}) {
+  return (
+    <div className="vp-list">
+      {players.filter(([id, q]) => q.alive && id !== meId).map(([id, q]) => (
+        <button key={id} className={`vp-pick${sel === id ? " sel" : ""}`} onClick={() => onSel(id)}>{q.name}</button>
+      ))}
+    </div>
+  );
+}
+
+/** 私聊 + 转账内联表单 */
+function DmForm({ room, players, meId }: { room: GameRoom; players: Array<[string, Player]>; meId: string }) {
+  const [target, setTarget] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [coins, setCoins] = useState("0");
+  const sendDm = () => {
+    if (!target) return;
+    room.send("dm", { targetId: target, text, coins: Math.max(0, Number(coins) || 0) });
+    setText(""); setCoins("0");
+  };
+  return (
+    <div className="dm-form">
+      <p className="cp-hint">选择私聊对象：</p>
+      <PlayerPicker players={players} meId={meId} sel={target} onSel={setTarget} />
+      <input value={text} placeholder="私信内容（可空）" onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && sendDm()} />
+      <div className="row">
+        <input value={coins} inputMode="numeric" placeholder="转账金额" style={{ width: 110 }}
+          onChange={(e) => setCoins(e.target.value)} />
+        <button className="act" disabled={!target} onClick={sendDm}>发送</button>
+      </div>
+    </div>
+  );
+}
+
+/** 聊天页：公共频道 + 可展开私聊 */
+function ChatPanel({ msgs, onSendChat, room, players, meId }: {
+  msgs: Msg[]; onSendChat: (t: string) => void; room: GameRoom;
+  players: Array<[string, Player]>; meId: string;
+}) {
+  const [dmOpen, setDmOpen] = useState(false);
+  return (
+    <>
+      <div className="chat-log t-fill">
+        {msgs.filter((m) => m.kind !== "notice").map((m, i) => (
+          <div key={i} className={m.kind}>
+            {m.kind === "chat" ? <><b>{m.from}：</b>{m.text}</> : <i className="dm">{m.from} 私信：{m.text}</i>}
+          </div>
+        ))}
+      </div>
+      <button className="act ghost" onClick={() => setDmOpen((v) => !v)}>{dmOpen ? "收起私聊" : "私聊 / 转账"}</button>
+      {dmOpen && <DmForm room={room} players={players} meId={meId} />}
+      <ChatInput onSend={onSendChat} />
+    </>
+  );
+}
+
+/** 探索页：地图入口 / 服药 / 私聊 / 投票 / 理事长面板 */
+function ExplorePanel({ p }: { p: Props }) {
+  const { room, me, myFaction, phase, day, players, init, chairs } = p;
+  const [dmOpen, setDmOpen] = useState(false);
+  const send = (type: string, msg?: unknown) => room.send(type, msg);
+  if (!me) return null;
+  return (
+    <div className="row wrap">
+      <button className="btn-primary eo-open" onClick={() => p.onOpenExplore()}>打开校园地图</button>
+      {me.medicine > 0 && (
+        <>
+          <Btn label="服药 · 恢复 HP" onClick={() => send("useMedicine", { kind: "hp" })} />
+          <Btn label="服药 · 恢复 SAN" onClick={() => send("useMedicine", { kind: "san" })} />
+        </>
+      )}
+      <Btn label="私聊 / 转账" onClick={() => setDmOpen((v) => !v)} />
+      {dmOpen && <DmForm room={room} players={players} meId={room.sessionId} />}
+      {phase === "noon" && day > 0 && (
+        <VotePanel room={room} me={me} players={players} chairs={chairs} />
+      )}
+      {phase === "night" && myFaction === "chair" && (
+        <ChairPanel room={room} me={me} players={players} chairs={chairs}
+          board={init?.ruleBoard ?? []} pool={p.rulePool} accuse={p.accuse} />
+      )}
+    </div>
+  );
+}
+
+/** 学生社区页：预约 + 四房间功能（点选式，无 prompt） */
+function BookingApp({ p }: { p: Props }) {
+  const { room, me, myFaction, players, init } = p;
+  const send = (type: string, msg?: unknown) => room.send(type, msg);
+  const [archA, setArchA] = useState<string | null>(null);
+  const [archB, setArchB] = useState<string | null>(null);
+  const [eraseId, setEraseId] = useState<string | null>(null);
+  const [pressTarget, setPressTarget] = useState<string | null>(null);
+  const [pressKind, setPressKind] = useState<"commend" | "guarantee" | null>(null);
+  if (!me) return null;
+  if (me.nodeId !== "community") return <p className="t-empty">请前往学生社区后使用本功能。</p>;
+  if (myFaction !== "student") return <p className="t-empty">理事长无需预约。</p>;
+  const meId = room.sessionId;
+
+  return (
+    <div className="bk">
+      <div className="cp-sec">
+        <p className="cp-sec-title">闸机预约（每天一段，每段≤3 人）</p>
+        <div className="row wrap">
+          <Btn label="预约上午段" onClick={() => send("bookSlot", { slot: "am" })} />
+          <Btn label="预约下午段" onClick={() => send("bookSlot", { slot: "pm" })} />
+        </div>
+        <Btn label="社区部 · 调阅昨日预约" onClick={() => send("deptBookings")} />
+      </div>
+
+      <div className="cp-sec">
+        <p className="cp-sec-title">办公室 · 档案调查（查两人是否同阵营，每天一份）</p>
+        <p className="cp-hint">第一人：</p>
+        <PlayerPicker players={players} meId={meId} sel={archA} onSel={setArchA} />
+        <p className="cp-hint">第二人：</p>
+        <PlayerPicker players={players} meId={meId} sel={archB} onSel={setArchB} />
+        <Btn label="提交档案调查" onClick={() => {
+          if (archA && archB) { send("officeArchive", { aId: archA, bId: archB }); setArchB(null); }
+        }} />
+      </div>
+
+      <div className="cp-sec">
+        <p className="cp-sec-title">策创部 · 抹除随机规矩（理事长不会知道）</p>
+        <div className="vp-list">
+          {(init?.ruleBoard ?? []).filter((r) => r.id.startsWith("R")).map((r) => (
+            <button key={r.id} className={`vp-pick rule${eraseId === r.id ? " sel" : ""}`} onClick={() => setEraseId(r.id)}>
+              {r.id} {r.text}
+            </button>
+          ))}
+        </div>
+        <Btn label={eraseId ? `抹除 ${eraseId}` : "先选一条规矩"} danger onClick={() => {
+          if (eraseId) { send("cceErase", { ruleId: eraseId }); setEraseId(null); }
+        }} />
+      </div>
+
+      <div className="cp-sec">
+        <p className="cp-sec-title">宣传部 · 校园墙</p>
+        <div className="row wrap">
+          <Btn label="破译两条规矩" onClick={() => send("press", { action: "decode" })} />
+          <Btn label="三好学生表彰" onClick={() => setPressKind(pressKind === "commend" ? null : "commend")} />
+          <Btn label="匿名担保" onClick={() => setPressKind(pressKind === "guarantee" ? null : "guarantee")} />
+        </div>
+        {pressKind && (
+          <>
+            <p className="cp-hint">{pressKind === "commend" ? "表彰对象（次日 15 AP + 1.5 票归票权）：" : "担保对象（今日违规则免检举，否则双方 -25HP/-25SAN）："}</p>
+            <PlayerPicker players={players} meId={meId} sel={pressTarget} onSel={setPressTarget} />
+            <Btn label={pressKind === "commend" ? "发布表彰" : "发布担保"} onClick={() => {
+              if (pressTarget) { send("press", { action: pressKind, targetId: pressTarget }); setPressTarget(null); setPressKind(null); }
+            }} />
+          </>
+        )}
+      </div>
+
+      <div className="cp-sec">
+        <p className="cp-sec-title">时光里的咖啡屋</p>
+        <div className="row wrap">
+          <Btn label="☕ 回复健康值 50" onClick={() => send("cafe", { kind: "hp" })} />
+          <Btn label="☕ 回复精神值 30" onClick={() => send("cafe", { kind: "san" })} />
+        </div>
       </div>
     </div>
   );
