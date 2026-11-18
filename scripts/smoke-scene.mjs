@@ -76,6 +76,48 @@ async function main() {
   const r8 = (results[stu.sessionId] || []).find((m) => m.eventId === "8");
   check(r8.states && r8.states.san === -4, `SAN 结算正确（payload ${JSON.stringify(r8.states)}）`);
 
+  // 7) 行政楼门禁：干事无通行卡被拒；debug 发 关#3（行政楼通行卡）后放行
+  stu.send("move", { nodeId: "admin" });
+  await sleep(400);
+  check(stu.state.players.get(stu.sessionId).nodeId === "tB", "干事无通行卡进行政楼被拒");
+  stu.send("debug", { give: "pack:关#3" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).pack.get("关#3") === 1);
+  stu.send("move", { nodeId: "admin" });
+  check(await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "admin"), "持通行卡放行行政楼");
+
+  // 8) 超市购买：触发购买事件拿 {操作} 货表 → sceneBuy 扣币入 pack（牛奶 = 耗#1，8 币）
+  stu.send("debug", { give: "coins" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).coins >= 50);
+  const coins0 = stu.state.players.get(stu.sessionId).coins;
+  stu.send("move", { nodeId: "market" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "market");
+  stu.send("sceneEvent", { sceneId: "market", eventId: "1" });
+  await waitFor(() => (results[stu.sessionId] || []).some((m) => m.eventId === "1" && m.op));
+  const r1 = (results[stu.sessionId] || []).find((m) => m.eventId === "1");
+  check(r1.op.includes("购买——"), `购买事件回传货表（op=${r1.op.slice(0, 24)}…）`);
+  stu.send("sceneBuy", { sceneId: "market", name: "未拆封的牛奶" });
+  check(await waitFor(() => stu.state.players.get(stu.sessionId).pack.get("耗#1") === 1), "牛奶入背包（耗#1）");
+  check(stu.state.players.get(stu.sessionId).coins === coins0 - 8, `扣币 8（${coins0} → ${stu.state.players.get(stu.sessionId).coins}）`);
+
+  // 9) 使用消耗品：牛奶 饥饿+15，背包扣减
+  const hunger0 = stu.state.players.get(stu.sessionId).hunger;
+  stu.send("usePack", { ref: "耗#1" });
+  check(await waitFor(() => !stu.state.players.get(stu.sessionId).pack.get("耗#1")), "使用后背包扣减");
+  check(stu.state.players.get(stu.sessionId).hunger === Math.min(100, hunger0 + 15), `饥饿 +15（${hunger0} → ${stu.state.players.get(stu.sessionId).hunger}）`);
+
+  // 10) 回收站：debug 塞 6 件杂物 → 一次回收超 5 件触发 SAN 惩罚
+  for (let i = 0; i < 6; i++) stu.send("debug", { give: "junk" }); // legacy junk，不入 pack，改用 pack 杂物
+  stu.send("debug", { give: "pack:普#1" }); stu.send("debug", { give: "pack:普#1" });
+  stu.send("debug", { give: "pack:普#2" }); stu.send("debug", { give: "pack:普#2" });
+  stu.send("debug", { give: "pack:普#3" }); stu.send("debug", { give: "pack:普#3" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).pack.get("普#3") === 2);
+  stu.send("move", { nodeId: "recycle" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "recycle");
+  const san0 = stu.state.players.get(stu.sessionId).san;
+  stu.send("packRecycle", { refs: ["普#1", "普#1", "普#2", "普#2", "普#3", "普#3"] });
+  check(await waitFor(() => !stu.state.players.get(stu.sessionId).pack.get("普#1")), "6 件杂物全部回收出背包");
+  check(stu.state.players.get(stu.sessionId).san < san0, `一次超 5 件触发 SAN 惩罚（${san0} → ${stu.state.players.get(stu.sessionId).san}）`);
+
   console.log(failed ? "[scene-smoke] 存在未通过项" : "[scene-smoke] 全部通过 ✓");
   process.exit(failed ? 1 : 0);
 }

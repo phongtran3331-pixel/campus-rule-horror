@@ -429,3 +429,12 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .bag-slot.legacy { border-style: dashed; }
 .bag-ref { display: block; color: var(--dim); font-size: 11px; margin: 2px 0 6px; }
 .bag-effect { color: #7fd7a8; font-size: 12px; }
+.bag-use { margin-top: 10px; background: #1f4a3d; border: 1px solid #2f6b57; color: #b8ecd2; padding: 8px 18px; border-radius: 8px; font-size: 14px; }
+.bag-use:hover { background: #27604e; }
+
+/* {操作} 事件面板（货表 / 功能入口） */
+.sv-op { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px dashed #3a2f4a; padding-top: 12px; }
+.sv-op-shop { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sv-op-btn { background: #2c2140; border: 1px solid #4a3a68; color: #d5c8ea; padding: 9px 12px; border-radius: 8px; font-size: 14px; text-align: left; }
+.sv-op-btn:hover { background: #3a2c55; border-color: #6a549a; }
+

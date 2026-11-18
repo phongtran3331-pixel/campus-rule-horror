@@ -151,7 +151,7 @@ async function main() {
   check(await waitFor(() => Math.round(stOf(host, jia.sessionId).hunger) === 67, 4000), `过夜饥饿衰减（甲 ${Math.round(stOf(host, jia.sessionId).hunger)}，应 67）`);
 
   // 8. M4 信息战（Day1 上午）
-  for (const g of ["scissors", "card", "key_press"]) bing.send("debug", { give: g });
+  for (const g of ["scissors", "card", "key_press", "pack:关#3"]) bing.send("debug", { give: g });
   bing.send("move", { nodeId: "tA" });
   await arrive(bing, bing.sessionId, "tA", 5000);
   bing.send("move", { nodeId: "admin" });

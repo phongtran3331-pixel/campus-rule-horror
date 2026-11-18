@@ -27,6 +27,48 @@ export function loadScenes(): Record<string, SceneData> {
   }
   return out;
 }
+
+export interface WikiEntry { seg: string; num?: number; count?: string; value: number | null; weight: number; desc: string; effect?: string }
+/** wiki.json：名称 → 属性（客户端 public，服务端同读） */
+export function loadWiki(): Record<string, WikiEntry> {
+  try {
+    return JSON.parse(readFileSync(join(DATA_DIR, "..", "wiki.json"), "utf-8"));
+  } catch { return {}; }
+}
+/** 反查：段#号 → 名称 */
+export function refToName(wiki: Record<string, WikiEntry>): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const [name, w] of Object.entries(wiki)) {
+    if (w.num != null) m.set(`${w.seg}#${w.num}`, name);
+  }
+  return m;
+}
+
+export interface ShopItem { sceneId: string; name: string; price: number; ref: string }
+/** 从场景文本 {操作:购买——名N/名N…} 解析货表（与文案同一份数据源） */
+export function loadShop(wiki: Record<string, WikiEntry>, scenes: Record<string, SceneData>): ShopItem[] {
+  // 名称 → 段#号 反查（refToName 是反向映射，不能直接用）
+  const refOf = new Map<string, string>();
+  for (const [name, w] of Object.entries(wiki)) {
+    if (w.num != null) refOf.set(name, `${w.seg}#${w.num}`);
+  }
+  const out: ShopItem[] = [];
+  for (const [sceneId, sc] of Object.entries(scenes)) {
+    for (const ev of Object.values(sc.events)) {
+      const text = `${ev.choice}\n${ev.result}`;
+      for (const m of text.matchAll(/\{操作:购买——([^}]+)\}/g)) {
+        for (const part of m[1].split("/")) {
+          const pm = part.trim().match(/^(.+?)(\d+)$/);
+          if (!pm) continue;
+          const name = pm[1];
+          const ref = refOf.get(name);
+          if (ref) out.push({ sceneId, name, price: Number(pm[2]), ref });
+        }
+      }
+    }
+  }
+  return out;
+}
 function readdirSyncSafe(dir: string): string[] {
   try { return readdirSync(dir); } catch { return []; }
 }

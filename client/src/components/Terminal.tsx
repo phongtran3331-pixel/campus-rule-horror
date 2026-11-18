@@ -137,7 +137,7 @@ function renderApp(app: AppId, p: Props): ReactNode {
 
   switch (app) {
     case "bag":
-      return <BagGrid me={me} />;
+      return <BagGrid me={me} room={room} />;
 
     case "chat":
       return (
@@ -285,7 +285,7 @@ function loadWiki(): Promise<Record<string, WikiItem>> {
   return fetch("wiki.json").then((r) => (r.ok ? r.json() : {})).then((j) => { wikiCache = j; return j; }).catch(() => ({}));
 }
 
-function BagGrid({ me }: { me: Player }) {
+function BagGrid({ me, room }: { me: Player; room: GameRoom }) {
   const [wiki, setWiki] = useState<Record<string, WikiItem> | null>(wikiCache);
   const [sel, setSel] = useState<{ kind: "pack"; ref: string } | { kind: "legacy"; def: ItemDef } | null>(null);
   useEffect(() => { loadWiki().then(setWiki); }, []);
@@ -356,6 +356,14 @@ function BagGrid({ me }: { me: Player }) {
                 <span className="bag-ref">{sel.ref}{w?.value != null ? ` · 回收价 ${w.value} 币` : ""}{w?.weight ? ` · 负重 ${w.weight}` : ""}</span>
                 <p>{w?.desc ?? "一件来路不明的物品。"}</p>
                 {w?.effect && <p className="bag-effect">{w.effect}</p>}
+                {w?.seg === "耗" && n > 0 && (
+                  <button
+                    className="bag-use"
+                    onClick={() => room.send("usePack", { ref: sel.ref })}
+                  >
+                    使用（剩 {n}）
+                  </button>
+                )}
               </>
             );
           })()
