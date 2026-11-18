@@ -562,12 +562,20 @@ export class GameRoom extends Room<GameState> {
     const scene = this.scenes[sceneId];
     const ev = scene?.events[eventId];
     if (process.env.SMOKE_DEBUG) console.log(`[scene] ${id} ${sceneId}/${eventId} node=${p?.nodeId} phase=${this.state.phase} ev=${!!ev} alive=${p?.alive}`);
-    if (!p || !p.alive || !ev) return;
+    if (!p || !p.alive) return;
     if (p.nodeId !== sceneId) return;
     const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
       || (sceneId === "canteen" && this.state.phase === "noon");
     if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
     const isChair = this.factionOf.get(id) === "chair";
+
+    // P1 幻觉：SAN≤30 的干事在教学楼会看到「不存在的 404 教室」（客户端幻觉入口，不走场景 JSON）
+    if (!ev && eventId === "__illusion") {
+      if (isChair || !sceneId.startsWith("t")) return;
+      this.onIllusion(client, sceneId);
+      return;
+    }
+    if (!ev) return;
     const key = `${sceneId}:${eventId}`;
     const parsed = parseEvent(ev);
 
@@ -654,6 +662,53 @@ export class GameRoom extends Room<GameState> {
   }
 
   // ---------- M6：背包交互 ----------
+
+  /** 幻觉事件：不存在的 404 教室。SAN≤30 可见；每座教学楼每天一次；风险与机遇并存 */
+  private onIllusion(client: Client, sceneId: string) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id)!;
+    if (p.san > 30) { this.sendNoticeTo(id, "你揉了揉眼睛。走廊尽头什么都没有。"); return; }
+    if (p.ap < 1) { this.sendNoticeTo(id, "行动值不足（需 1 AP）。"); return; }
+    const key = `${sceneId}:__illusion:${this.state.day}`;
+    p.ap -= 1;
+    if (this.claimed.has(key)) {
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: true, fake: false, op: null,
+        grants: [], states: {},
+        text: "404 的门虚掩着。你今天已经进去过一次了——至少你记得只进去过一次。",
+      });
+      return;
+    }
+    const looty = Math.random() < 0.4;
+    if (looty) {
+      this.claimed.add(key);
+      // 从 wiki 高价值段随机一件（物品本不该"存在"，所以格外值钱）
+      const highs = Object.entries(this.wiki).filter(([, w]) => w.seg === "高");
+      const [name, w] = highs[Math.floor(Math.random() * highs.length)] ?? ["名牌钢笔", this.wiki["名牌钢笔"]];
+      const ref = `${w?.seg ?? "高"}#${w?.num ?? 1}`;
+      p.pack.set(ref, (p.pack.get(ref) ?? 0) + 1);
+      p.san = Math.max(0, p.san - 4);
+      if (p.san <= 0) { this.eliminate(id, "精神崩溃"); return; }
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: false, fake: false, op: null,
+        grants: [{ name, ref }], states: { san: -4, ap: -1 },
+        text: "404 教室里整整齐齐摆着一张课桌，桌上放着一件不属于这所学校的东西。你把它收进了包里。教室在你身后消失了。",
+      });
+    } else {
+      p.san = Math.max(0, p.san - 8);
+      if (p.san <= 0) { this.eliminate(id, "精神崩溃"); return; }
+      const texts = [
+        "404 教室里坐满了人，全部背对着你。你退出来的瞬间，忘了他们穿的是什么颜色。",
+        "你在 404 的黑板上看到自己的名字，写在值日生一栏。你不记得今天轮到你。",
+        "404 的讲台上放着一本点名册。你翻开的那页是空的，再翻一页，还是空的。你合上书，书脊上印着你的学号。",
+      ];
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: false, fake: false, op: null,
+        grants: [], states: { san: -8, ap: -1 },
+        text: texts[Math.floor(Math.random() * texts.length)],
+      });
+    }
+  }
 
   /** 场景货表购买：name 须命中本节点 {操作:购买} 清单；理事长假买（币与货都不动） */
   private onSceneBuy(client: Client, msg: { sceneId?: string; name?: string }) {
@@ -1110,6 +1165,8 @@ export class GameRoom extends Room<GameState> {
     else if (g === "scissors") p.scissors += 1;
     else if (g === "card") p.cards += 1;
     else if (g === "junk") { p.junk += 1; p.junkValue += 3; }
+    else if (g === "san20") { p.san = 25; } // 幻觉测试：压 SAN 到阈值下（留余量防回收惩罚击穿）
+    else if (g === "ap") { p.ap += 5; }
     else if (g.startsWith("key_")) {
       const ks = new Set(p.keys.split(",").filter(Boolean));
       ks.add(g);

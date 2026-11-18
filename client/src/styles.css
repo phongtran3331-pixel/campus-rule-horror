@@ -413,6 +413,8 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .sv-event { text-align: left; background: #101823; border: 1px solid var(--line); border-left: 3px solid #24405a; color: #cfd9e4; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; line-height: 1.6; }
 .sv-event:hover:not(:disabled) { border-left-color: var(--teal); background: #132031; }
 .sv-event:disabled { opacity: 0.45; }
+.sv-event.illusion { border-left-color: #6a2a2a; color: #d8a0a0; font-style: italic; }
+.sv-event.illusion:hover:not(:disabled) { border-left-color: #c33; background: #1c1016; }
 .sv-quiz { background: #141018; border: 1px solid #3a2f4a; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .sv-quiz-q { color: #e8ddf5; font-size: 14.5px; line-height: 1.7; margin: 0; }
 .sv-quiz-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }

@@ -21,7 +21,7 @@ let lastResult: (SceneResult & { eventId: string }) | null = null;
 let lastQuiz: QuizMsg | null = null;
 
 /** 节点场景界面：situation 环视 + 事件选项 + 结果渲染（服务端只回编号与纯文本） */
-export function SceneView({ room, nodeId }: { room: GameRoom; nodeId: string }) {
+export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: string; san: number }) {
   const [scene, setScene] = useState<SceneJson | null>(null);
   const [look, setLook] = useState<string>("");        // 环视文本
   const [busy, setBusy] = useState<string | null>(null); // 进行中事件 id
@@ -92,6 +92,12 @@ export function SceneView({ room, nodeId }: { room: GameRoom; nodeId: string }) 
             {strip(ev.choice)}
           </button>
         ))}
+        {/* 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」 */}
+        {/^t[A-C]$/.test(nodeId) && san <= 30 && (
+          <button className="sv-event illusion" disabled={busy !== null} onClick={() => clickEvent("__illusion")}>
+            走廊尽头多出一间 404 教室……
+          </button>
+        )}
       </div>
 
       {quiz && (

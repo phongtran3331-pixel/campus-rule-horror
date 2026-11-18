@@ -10,6 +10,9 @@ const waitFor = async (fn, timeout = 6000, step = 60) => {
 };
 let failed = false;
 const check = (c, label) => { console.log(`${c ? "✓" : "✗"} ${label}`); if (!c) failed = true; };
+// 加速局时段流转快，sceneEvent 仅探索时段可用：触发前等待进入探索时段
+const EXPLORE_PHASES = ["morning", "afternoon", "evening"];
+const waitExplore = (r) => waitFor(() => EXPLORE_PHASES.includes(r.state.phase), 120000, 200);
 
 async function main() {
   const host = await client.create("game", { name: "甲", gender: "male", timeScale: 22, debug: true });
@@ -68,7 +71,25 @@ async function main() {
   const r7 = results[aChair.sessionId].find((m) => m.eventId === "7");
   check(r7.fake === true && r7.grants.length === 0, `理事长假交互（fake=${r7.fake}，无获得）`);
 
-  // 6) 状态结算：干事前往教学楼B 触发事件 8（跺脚亮灯 SAN-3）
+  // 6) 幻觉：SAN 压到 25 → 教学楼出现 404 教室事件；消耗 1AP，SAN 再扣（-4 得物 / -8 空）
+  await waitExplore(stu);
+  stu.send("debug", { give: "san20" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).san === 25);
+  stu.send("move", { nodeId: "tA" });
+  await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "tA");
+  const apB = stu.state.players.get(stu.sessionId).ap;
+  stu.send("sceneEvent", { sceneId: "tA", eventId: "__illusion" });
+  check(await waitFor(() => (results[stu.sessionId] || []).some((m) => m.eventId === "__illusion")), "幻觉事件返回结果");
+  const ri = (results[stu.sessionId] || []).find((m) => m.eventId === "__illusion");
+  check(ri.states.ap === -1 && (ri.states.san === -4 || ri.states.san === -8), `幻觉结算（AP-1，SAN ${ri.states.san}）`);
+  check(stu.state.players.get(stu.sessionId).ap === apB - 1, `幻觉消耗 1 AP（${apB} → ${stu.state.players.get(stu.sessionId).ap}）`);
+  // 同日二次触发：得物分支应回空态；空分支本就不占位，再出结果也算正常
+  stu.send("sceneEvent", { sceneId: "tA", eventId: "__illusion" });
+  await waitFor(() => (results[stu.sessionId] || []).filter((m) => m.eventId === "__illusion").length >= 2);
+  const ri2 = (results[stu.sessionId] || []).filter((m) => m.eventId === "__illusion")[1];
+  check(ri2.taken === (ri.states.san === -4), `二次进入空态一致（首回 SAN${ri.states.san}，二次 taken=${ri2.taken}）`);
+
+  // 7) 状态结算：干事前往教学楼B 触发事件 8（跺脚亮灯 SAN-3）
   stu.send("move", { nodeId: "tB" });
   await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "tB");
   stu.send("sceneEvent", { sceneId: "tB", eventId: "8" });
@@ -86,11 +107,13 @@ async function main() {
   check(await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "admin"), "持通行卡放行行政楼");
 
   // 8) 超市购买：触发购买事件拿 {操作} 货表 → sceneBuy 扣币入 pack（牛奶 = 耗#1，8 币）
+  stu.send("debug", { give: "ap" }); // 幻觉+多段移动后补 AP，避免移动被拒
   stu.send("debug", { give: "coins" });
   await waitFor(() => stu.state.players.get(stu.sessionId).coins >= 50);
   const coins0 = stu.state.players.get(stu.sessionId).coins;
   stu.send("move", { nodeId: "market" });
   await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "market");
+  await waitExplore(stu);
   stu.send("sceneEvent", { sceneId: "market", eventId: "1" });
   await waitFor(() => (results[stu.sessionId] || []).some((m) => m.eventId === "1" && m.op));
   const r1 = (results[stu.sessionId] || []).find((m) => m.eventId === "1");
@@ -113,6 +136,7 @@ async function main() {
   await waitFor(() => stu.state.players.get(stu.sessionId).pack.get("普#3") === 2);
   stu.send("move", { nodeId: "recycle" });
   await waitFor(() => stu.state.players.get(stu.sessionId).nodeId === "recycle");
+  await waitExplore(stu);
   const san0 = stu.state.players.get(stu.sessionId).san;
   stu.send("packRecycle", { refs: ["普#1", "普#1", "普#2", "普#2", "普#3", "普#3"] });
   check(await waitFor(() => !stu.state.players.get(stu.sessionId).pack.get("普#1")), "6 件杂物全部回收出背包");

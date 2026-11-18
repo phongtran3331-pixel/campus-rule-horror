@@ -150,7 +150,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
       <p className="eo-desc">{node.desc}</p>
 
       {/* M6：真实场景文本（环视 + 事件 + 结算） */}
-      <SceneView room={room} nodeId={at} />
+      <SceneView room={room} nodeId={at} san={me.san} />
 
       <div className="row wrap eo-actions">
         <Btn label="翻找杂物（1 AP）" onClick={() => send("explore")} />
