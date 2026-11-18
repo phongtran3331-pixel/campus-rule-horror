@@ -179,6 +179,7 @@ export class GameRoom extends Room<GameState> {
       this.clients.find((c) => c.sessionId === id)?.send("role", {
         faction: f,
         chairs: f === "chair" ? chairs.map((c) => ({ id: c, name: this.state.players.get(c)!.name })) : [],
+        pool: f === "chair" ? this.pool : [], // 理事长需掌握备选规则池（换规用）
       });
     });
 
@@ -240,6 +241,7 @@ export class GameRoom extends Room<GameState> {
       if (chief) {
         this.broadcast("notice", { text: `理事长讨论时间。今日弹药：${this.todayViolationEvents} 发（每有一处干事违规 +1 发）` });
       }
+      this.pushAccuseState();
     }
   }
 
@@ -444,17 +446,20 @@ export class GameRoom extends Room<GameState> {
       // 匿名担保生效：检举被抵消，按"未成立"处理（不暴露担保存在）
       this.accuse.failures++;
       const left = 2 - this.accuse.failures;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】检举未成立，无事发生。${left > 0 ? `再失败 ${left} 次将停止今晚检举权。` : "今晚检举权终止。"}` });
       return;
     }
     if (guilty) {
       const dmg = 25 + 5 * this.state.day;
       t.hp -= dmg;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】理事长检举成立：${t.name} 今日确有违规，HP -${dmg}（余 ${Math.max(0, Math.round(t.hp))}）。检举成功，可继续检举或更换一条规则。` });
       if (t.hp <= 0) this.eliminate(targetId, "检举处决");
     } else {
       this.accuse.failures++;
       const left = 2 - this.accuse.failures;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】检举未成立，无事发生。${left > 0 ? `再失败 ${left} 次将停止今晚检举权。` : "今晚检举权终止。"}` });
     }
   }
@@ -478,6 +483,27 @@ export class GameRoom extends Room<GameState> {
     // 广播具体修正内容（理事长可借此放烟雾弹）
     this.broadcast("ruleSwap", { board: this.board });
     this.broadcast("notice", { text: `【校规修正】${outRule.text} 即日起废止；新规定：${inRule.text}` });
+    this.pushAccuseState();
+    // 备选池已变，同步给全体理事长
+    this.pushRulePool();
+  }
+
+  /** 检举状态推送：夜间进入 / 每次检举后 / 换规后（客户端理事长面板的数据源） */
+  private pushAccuseState() {
+    this.broadcast("accuseState", {
+      attempts: this.accuse.attempts,
+      ammo: this.todayViolationEvents,
+      failures: this.accuse.failures,
+      swapped: this.accuse.swapped,
+    });
+  }
+
+  /** 备选规则池推送（仅理事长；换规后池子变化） */
+  private pushRulePool() {
+    const poolMsg = { pool: this.pool };
+    for (const c of this.clients) {
+      if (this.factionOf.get(c.sessionId) === "chair") c.send("rulePool", poolMsg);
+    }
   }
 
   // ---------- M3：探索 / 交易 / 生存 ----------

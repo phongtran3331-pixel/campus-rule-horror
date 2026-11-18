@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import { ITEM_CATALOG, type ItemDef } from "../../../server/src/data/items";
-import type { Faction, GameRoom, RoomInit } from "../lib/client";
+import type { AccuseStateMsg, Faction, GameRoom, RoomInit, RuleMsg } from "../lib/client";
 import { virtualClock } from "../lib/vtime";
 
 interface Msg { kind: string; from?: string; text: string }
@@ -20,6 +20,9 @@ interface Props {
   onSendChat: (t: string) => void;
   onOpenExplore: () => void;
   init: RoomInit | null;
+  accuse: AccuseStateMsg | null;
+  rulePool: RuleMsg[];
+  chairs: Array<{ id: string; name: string }>;
   nodeName: string;
 }
 
@@ -124,7 +127,7 @@ function Btn({ label, onClick, danger }: { label: string; onClick: () => void; d
 }
 
 function renderApp(app: AppId, p: Props): ReactNode {
-  const { room, me, myFaction, phase, day, players, msgs, onSendChat, init } = p;
+  const { room, me, myFaction, phase, day, players, msgs, onSendChat, init, chairs } = p;
   if (!me) return null;
   const send = (type: string, msg?: unknown) => room.send(type, msg);
   const at = me.nodeId;
@@ -193,16 +196,11 @@ function renderApp(app: AppId, p: Props): ReactNode {
             send("dm", { targetId: t, text, coins: Number.isFinite(coins) ? coins : 0 });
           }} />
           {phase === "noon" && day > 0 && (
-            <Btn label="投票放逐" danger onClick={() => {
-              const t = askTarget("投票放逐谁？");
-              if (t) send("vote", { targetId: t });
-            }} />
+            <VotePanel room={room} me={me} players={players} chairs={chairs} />
           )}
           {phase === "night" && myFaction === "chair" && (
-            <Btn label="检举" danger onClick={() => {
-              const t = askTarget("检举谁？");
-              if (t) send("accuse", { targetId: t });
-            }} />
+            <ChairPanel room={room} me={me} players={players} chairs={chairs}
+              board={init?.ruleBoard ?? []} pool={p.rulePool} accuse={p.accuse} />
           )}
         </div>
       );
@@ -388,6 +386,120 @@ function ChatInput({ onSend }: { onSend: (t: string) => void }) {
       <input value={text} placeholder="公共频道发言…" onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") go(); }} />
       <button onClick={go}>发送</button>
+    </div>
+  );
+}
+
+
+/** 午间放逐投票：名单点选 + 确认（不再用 prompt） */
+function VotePanel({ room, me, players, chairs }: {
+  room: GameRoom; me: Player;
+  players: Array<[string, Player]>; chairs: Array<{ id: string; name: string }>;
+}) {
+  const [sel, setSel] = useState<string | null>(null);
+  const [voted, setVoted] = useState(false);
+  const chairIds = new Set(chairs.map((c) => c.id));
+  const myId = room.sessionId;
+
+  return (
+    <div className="vp">
+      <p className="vp-title">午间放逐投票{voted ? "（已投）" : ""}</p>
+      {!voted ? (
+        <>
+          <div className="vp-list">
+            {players.filter(([id, q]) => q.alive && id !== myId).map(([id, q]) => (
+              <button key={id} className={`vp-pick${sel === id ? " sel" : ""}`} onClick={() => setSel(id)}>
+                {q.name}{chairIds.has(id) ? " · 理事长?" : ""}
+              </button>
+            ))}
+          </div>
+          <button className="act danger" disabled={!sel} onClick={() => {
+            if (!sel) return;
+            room.send("vote", { targetId: sel });
+            setVoted(true);
+          }}>确认放逐{sel ? ` ${players.find(([id]) => id === sel)?.[1].name ?? ""}` : "（先点选一人）"}</button>
+        </>
+      ) : (
+        <p className="vp-done">票已记录。等待唱票，结果将广播公示。</p>
+      )}
+    </div>
+  );
+}
+
+/** 理事长夜间面板：弹药状态 / 检举（两步确认）/ 换规（板上规则 ↔ 备选池） */
+function ChairPanel({ room, me, players, chairs, board, pool, accuse }: {
+  room: GameRoom; me: Player;
+  players: Array<[string, Player]>; chairs: Array<{ id: string; name: string }>;
+  board: RuleMsg[]; pool: RuleMsg[]; accuse: AccuseStateMsg | null;
+}) {
+  const [accuseTarget, setAccuseTarget] = useState<string | null>(null);
+  const [outId, setOutId] = useState<string | null>(null);
+  const [inId, setInId] = useState<string | null>(null);
+  const chairIds = new Set(chairs.map((c) => c.id));
+  const ammo = accuse?.ammo ?? 0;
+  const attempts = accuse?.attempts ?? 0;
+  const failures = accuse?.failures ?? 0;
+  const stopped = failures >= 2 || attempts >= ammo; // 弹药尽或两次失败即停
+  const canSwap = !accuse?.swapped && attempts > 0;
+
+  return (
+    <div className="cp">
+      <p className="cp-status">
+        今晚弹药 <b>{ammo - attempts}</b>/{ammo} 发 · 失败 {failures}/2 · 换规 {accuse?.swapped ? "已用" : "可用"}
+        {attempts === 0 && ammo === 0 && "（今日无人违规，无弹可用）"}
+      </p>
+
+      {/* 检举：先点人，再确认 */}
+      <div className="cp-sec">
+        <p className="cp-sec-title">检举{stopped ? "（今晚已终止）" : ""}</p>
+        {!stopped && (
+          <>
+            <div className="vp-list">
+              {players.filter(([id, q]) => q.alive && id !== room.sessionId).map(([id, q]) => (
+                <button key={id} className={`vp-pick${accuseTarget === id ? " sel" : ""}`} onClick={() => setAccuseTarget(id)}>
+                  {q.name}{chairIds.has(id) ? " · 理事长" : ""}
+                </button>
+              ))}
+            </div>
+            <button className="act danger" disabled={!accuseTarget} onClick={() => {
+              if (!accuseTarget) return;
+              room.send("accuse", { targetId: accuseTarget });
+              setAccuseTarget(null);
+            }}>确认检举{accuseTarget ? ` ${players.find(([id]) => id === accuseTarget)?.[1].name ?? ""}` : "（先点选一人）"}</button>
+          </>
+        )}
+      </div>
+
+      {/* 换规：废止一条 + 换上一条，两步 */}
+      <div className="cp-sec">
+        <p className="cp-sec-title">校规修正（每夜一次）{!canSwap && attempts === 0 ? "（须先检举一次）" : accuse?.swapped ? "（今晚已修正）" : ""}</p>
+        {canSwap && (
+          <>
+            <p className="cp-hint">第一步 · 废止现行随机规矩一条：</p>
+            <div className="vp-list">
+              {board.map((r) => (
+                <button key={r.id} className={`vp-pick rule${outId === r.id ? " sel" : ""}`} onClick={() => setOutId(r.id)}>
+                  {r.id} {r.text}
+                </button>
+              ))}
+            </div>
+            <p className="cp-hint">第二步 · 从备选池换上一条：</p>
+            <div className="vp-list">
+              {pool.map((r) => (
+                <button key={r.id} className={`vp-pick rule${inId === r.id ? " sel" : ""}`} onClick={() => setInId(r.id)}>
+                  {r.id} {r.text}
+                </button>
+              ))}
+            </div>
+            <button className="act" disabled={!outId || !inId} onClick={() => {
+              if (!outId || !inId) return;
+              room.send("swapRule", { outId, inId });
+              setOutId(null); setInId(null);
+            }}>广播修正内容{outId && inId ? "" : "（先各选一条）"}</button>
+            <button className="act ghost" onClick={() => { setOutId(null); setInId(null); }}>今晚不修正</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

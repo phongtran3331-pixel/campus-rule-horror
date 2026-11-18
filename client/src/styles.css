@@ -453,3 +453,19 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .hub-card-go { margin-top: 6px; color: #b39ddb; font-size: 14px; }
 .hub-card.soon { opacity: .55; }
 
+/* 投票面板 + 理事长夜间面板 */
+.vp, .cp { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; border-top: 1px dashed #3a2f4a; padding-top: 12px; width: 100%; }
+.vp-title, .cp-sec-title { margin: 0; color: #e8ddf5; font-size: 14.5px; letter-spacing: 1px; }
+.vp-list { display: flex; flex-direction: column; gap: 6px; }
+.vp-pick { text-align: left; background: #1a1426; border: 1px solid #3a2f4a; color: #cfc3e3; border-radius: 8px; padding: 9px 12px; font-size: 14px; }
+.vp-pick:hover { border-color: #6a549a; }
+.vp-pick.sel { background: #2c2140; border-color: #8a6fc0; color: #efe8fa; }
+.vp-pick.rule { font-size: 13px; line-height: 1.6; }
+.vp-done { color: #7fd7a8; font-size: 13.5px; margin: 0; }
+.cp-status { margin: 0; color: #9a8cb5; font-size: 13px; }
+.cp-status b { color: #e8b96a; }
+.cp-sec { display: flex; flex-direction: column; gap: 8px; }
+.cp-hint { margin: 0; color: #6f6285; font-size: 12.5px; }
+.act.ghost { background: none; border: 1px solid #3a2f4a; color: #6f6285; }
+.act.ghost:hover { color: #cfc3e3; border-color: #6a549a; }
+

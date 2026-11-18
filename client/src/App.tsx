@@ -1,5 +1,5 @@
 import { Component, useEffect, useReducer, useState, type ReactNode } from "react";
-import { colyseus, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleSwapMsg } from "./lib/client";
+import { colyseus, type AccuseStateMsg, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleMsg, type RuleSwapMsg } from "./lib/client";
 import type { Player } from "../../server/src/schema/GameState";
 import { PhaseBanner } from "./components/PhaseBanner";
 import { Terminal } from "./components/Terminal";
@@ -163,12 +163,16 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
   const [introDone, setIntroDone] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [gameover, setGameover] = useState<GameOverMsg | null>(null);
+  const [accuse, setAccuse] = useState<AccuseStateMsg | null>(null);
+  const [rulePool, setRulePool] = useState<RuleMsg[]>([]);
 
   useEffect(() => {
     room.onStateChange(() => force());
     room.onMessage("init", (d: RoomInit) => setInit(d));
-    room.onMessage("role", (d: RoleMsg) => { setMyFaction(d.faction); setChairs(d.chairs); });
+    room.onMessage("role", (d: RoleMsg) => { setMyFaction(d.faction); setChairs(d.chairs); if (d.pool) setRulePool(d.pool); });
     room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
+    room.onMessage("rulePool", (d: { pool: RuleMsg[] }) => setRulePool(d.pool));
+    room.onMessage("accuseState", (d: AccuseStateMsg) => setAccuse(d));
     room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
     room.onMessage("dm", (m: { from: string; text: string; coins: number }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "dm", from: m.from, text: `${m.text}${m.coins > 0 ? `（附 ${m.coins} 币）` : ""}` }]));
@@ -245,6 +249,9 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
             onSendChat={(t) => room.send("chat", { text: t })}
             onOpenExplore={() => setExploreOpen(true)}
             init={init}
+            accuse={accuse}
+            rulePool={rulePool}
+            chairs={chairs}
             nodeName={init?.nodes.find((n) => n.id === me?.nodeId)?.name ?? ""}
           />
         </div>
