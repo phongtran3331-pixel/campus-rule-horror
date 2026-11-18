@@ -11,7 +11,7 @@ interface SceneResult {
   grants: Array<{ name: string; ref: string }>;
   states: Record<string, number>;
 }
-interface QuizMsg { sceneId: string; eventId: string; question: string; options: string[]; rule: string }
+interface QuizMsg { sceneId: string; eventId: string; question: string; numeric: boolean; rule: string }
 
 const strip = (s: string) => s.replace(/\{[^}]*\}/g, "").trim();
 const STATE_CN: Record<string, string> = { ap: "行动值", hunger: "饥饿值", hp: "健康值", san: "精神值" };
@@ -64,11 +64,11 @@ export function SceneView({ room, nodeId }: { room: GameRoom; nodeId: string }) 
     setResult(null);
     room.send("sceneEvent", { sceneId: nodeId, eventId });
   };
-  const answerQuiz = (answer: number) => {
-    if (!quiz) return;
+  const answerQuiz = (answer: string) => {
+    if (!quiz || !answer.trim()) return;
     setBusy(quiz.eventId);
     setQuiz(null);
-    room.send("sceneEvent", { sceneId: quiz.sceneId, eventId: quiz.eventId, answer });
+    room.send("sceneEvent", { sceneId: quiz.sceneId, eventId: quiz.eventId, answer: answer.trim() });
   };
 
   return (
@@ -97,11 +97,7 @@ export function SceneView({ room, nodeId }: { room: GameRoom; nodeId: string }) 
       {quiz && (
         <div className="sv-quiz">
           <p className="sv-quiz-q">{quiz.question}</p>
-          <div className="sv-quiz-opts">
-            {quiz.options.map((o, i) => (
-              <button key={i} className="sv-event" onClick={() => answerQuiz(i + 1)}>{o}</button>
-            ))}
-          </div>
+          <QuizFill numeric={quiz.numeric} onSubmit={answerQuiz} />
           <p className="sv-quiz-rule">{quiz.rule}</p>
         </div>
       )}
@@ -120,6 +116,26 @@ export function SceneView({ room, nodeId }: { room: GameRoom; nodeId: string }) 
           {result.fake && <p className="sv-fake">（你记住了这里的一切。它不会少，你也不会多。）</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 填空答题输入：数字题用数字键盘，回车或按钮提交 */
+function QuizFill({ numeric, onSubmit }: { numeric: boolean; onSubmit: (v: string) => void }) {
+  const [v, setV] = useState("");
+  return (
+    <div className="sv-quiz-fill">
+      <input
+        className="sv-quiz-input"
+        type={numeric ? "number" : "text"}
+        inputMode={numeric ? "numeric" : "text"}
+        placeholder={numeric ? "填一个数字" : "写下答案"}
+        value={v}
+        autoFocus
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") onSubmit(v); }}
+      />
+      <button className="sv-quiz-go" disabled={!v.trim()} onClick={() => onSubmit(v)}>作答</button>
     </div>
   );
 }

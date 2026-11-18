@@ -40,23 +40,23 @@ async function main() {
   stu.send("sceneEvent", { sceneId: "gate", eventId: "3" });
   check(await waitFor(() => quiz[stu.sessionId]), "答题事件先返回题目（sceneQuiz）");
   const q = quiz[stu.sessionId];
-  check(q.question.includes("第几个来的") && q.options.length === 4, `题目与选项完整：${q.question}`);
+  check(q.question.includes("第几个来的") && q.numeric === true, `题目为数字填空题：${q.question}`);
 
   // 2) 实际到访 3 人 → 正确答案应为选项 3；故意答 1（错误）
-  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: 1 });
+  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: "1" });
   await waitFor(() => (results[stu.sessionId] || []).some((m) => m.eventId === "3" && m.text));
   let r3 = results[stu.sessionId].find((m) => m.eventId === "3");
   check(r3.text.includes("不再看你"), `答错返回答错分支文案：「${r3.text.slice(0, 24)}…」`);
 
   // 3) 答对（选项 3）：获得破旧的钥匙，pack 有 关#1
-  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: 3 });
+  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: "3" });
   await waitFor(() => (results[stu.sessionId] || []).filter((m) => m.eventId === "3").length >= 2);
   r3 = results[stu.sessionId].filter((m) => m.eventId === "3")[1];
   check(r3.grants.some((g) => g.ref === "关#1"), `答对获得破旧的钥匙：${JSON.stringify(r3.grants)}`);
-  check(stu.state.players.get(stu.sessionId).pack.get("关#1") === 1, "pack 已入库 关#1");
+  check(await waitFor(() => stu.state.players.get(stu.sessionId).pack.get("关#1") === 1), "pack 已入库 关#1");
 
   // 4) 先到先得：干事自己再答对 → 空态文案（3 人局仅 1 名干事）
-  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: 3 });
+  stu.send("sceneEvent", { sceneId: "gate", eventId: "3", answer: "3" });
   await waitFor(() => (results[stu.sessionId] || []).filter((m) => m.eventId === "3").length >= 3);
   const rb = (results[stu.sessionId] || []).filter((m) => m.eventId === "3").pop();
   check(rb.taken === true && rb.grants.length === 0, `点位被占回空态：「${rb.text.slice(0, 16)}…」`);

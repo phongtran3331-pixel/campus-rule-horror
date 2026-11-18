@@ -276,37 +276,93 @@ function renderApp(app: AppId, p: Props): ReactNode {
   }
 }
 
-/** 实体背包：40 格网格，按物品目录顺序填充 */
+/** 实体背包：真实物品（pack=场景文本获得，wiki.json 描述）为主，旧掉落计数为杂物袋 */
+interface WikiItem { seg: string; num?: number; count?: string; value: number | null; weight: number; desc: string; effect?: string }
+const SEG_ORDER: Record<string, number> = { 普: 0, 高: 1, 关: 2, 耗: 3 };
+let wikiCache: Record<string, WikiItem> | null = null;
+function loadWiki(): Promise<Record<string, WikiItem>> {
+  if (wikiCache) return Promise.resolve(wikiCache);
+  return fetch("wiki.json").then((r) => (r.ok ? r.json() : {})).then((j) => { wikiCache = j; return j; }).catch(() => ({}));
+}
+
 function BagGrid({ me }: { me: Player }) {
-  const [sel, setSel] = useState<ItemDef | null>(null);
-  const countOf = (def: ItemDef): number => {
+  const [wiki, setWiki] = useState<Record<string, WikiItem> | null>(wikiCache);
+  const [sel, setSel] = useState<{ kind: "pack"; ref: string } | { kind: "legacy"; def: ItemDef } | null>(null);
+  useEffect(() => { loadWiki().then(setWiki); }, []);
+
+  // pack 排序：段序 → 编号；负重合计
+  const packEntries = [...me.pack.entries()].sort((a, b) => {
+    const [sa, na] = a[0].split("#"); const [sb, nb] = b[0].split("#");
+    return (SEG_ORDER[sa] - SEG_ORDER[sb]) || (Number(na) - Number(nb));
+  });
+  const packWeight = packEntries.reduce((sum, [ref, n]) => sum + (wiki?.[refName(ref)]?.weight ?? 0) * n, 0);
+  function refName(ref: string): string {
+    if (!wiki) return ref;
+    const hit = Object.keys(wiki).find((k) => wiki[k].seg === ref.split("#")[0] && wiki[k].num === Number(ref.split("#")[1]));
+    return hit ?? ref;
+  }
+
+  const legacyCount = (def: ItemDef): number => {
     if (def.src === "items") return me.items.get(def.id) ?? 0;
     if (def.src === "field:junk") return me.junk;
     if (def.src.startsWith("field:key_")) return me.keys.split(",").filter(Boolean).includes(def.id) ? 1 : 0;
     const field = def.src.replace("field:", "") as "food" | "medicine" | "scissors" | "coffee" | "cards";
     return me[field] ?? 0;
   };
-  const cells = ITEM_CATALOG.map((def) => ({ def, n: countOf(def) }));
+  const legacyCells = ITEM_CATALOG.map((def) => ({ def, n: legacyCount(def) })).filter((c) => c.n > 0);
+
   return (
     <>
+      <div className="bag-meta">
+        <span>背包负重 {packWeight.toFixed(1)}</span>
+        <span className="bag-meta-dim">负重越高，饥饿消耗越快</span>
+      </div>
       <div className="bag-grid">
-        {cells.map(({ def, n }) => (
+        {packEntries.map(([ref, n]) => {
+          const name = refName(ref);
+          const w = wiki?.[name];
+          return (
+            <button
+              key={ref}
+              className={`bag-slot has seg-${ref.split("#")[0]}${sel?.kind === "pack" && sel.ref === ref ? " sel" : ""}`}
+              onClick={() => setSel({ kind: "pack", ref })}
+            >
+              <span className="bag-icon">{name.slice(0, 2)}</span>
+              <span className="bag-n">{n}</span>
+            </button>
+          );
+        })}
+        {legacyCells.map(({ def, n }) => (
           <button
             key={def.id}
-            className={`bag-slot${n > 0 ? " has" : ""}${sel?.id === def.id ? " sel" : ""}`}
-            disabled={n === 0}
-            onClick={() => setSel(def)}
+            className={`bag-slot has legacy${sel?.kind === "legacy" && sel.def.id === def.id ? " sel" : ""}`}
+            onClick={() => setSel({ kind: "legacy", def })}
           >
             <span className="bag-icon">{def.icon}</span>
-            {n > 0 && <span className="bag-n">{n}</span>}
+            <span className="bag-n">{n}</span>
           </button>
         ))}
+        {packEntries.length + legacyCells.length === 0 && <p className="t-empty">背包是空的。去探索吧。</p>}
       </div>
       <div className="bag-detail">
-        {sel ? (
+        {sel?.kind === "pack" ? (
+          (() => {
+            const name = refName(sel.ref);
+            const w = wiki?.[name];
+            const n = me.pack.get(sel.ref) ?? 0;
+            return (
+              <>
+                <b>{name} ×{n}</b>
+                <span className="bag-ref">{sel.ref}{w?.value != null ? ` · 回收价 ${w.value} 币` : ""}{w?.weight ? ` · 负重 ${w.weight}` : ""}</span>
+                <p>{w?.desc ?? "一件来路不明的物品。"}</p>
+                {w?.effect && <p className="bag-effect">{w.effect}</p>}
+              </>
+            );
+          })()
+        ) : sel?.kind === "legacy" ? (
           <>
-            <b>{sel.name}{countOf(sel) > 0 ? ` ×${countOf(sel)}` : ""}</b>
-            <p>{sel.desc}</p>
+            <b>{sel.def.name}{legacyCount(sel.def) > 0 ? ` ×${legacyCount(sel.def)}` : ""}</b>
+            <p>{sel.def.desc}</p>
           </>
         ) : (
           <p className="t-empty">选择一个物品查看详情。</p>
