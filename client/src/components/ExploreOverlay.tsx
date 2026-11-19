@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
 import { MapView } from "./MapView";
@@ -13,6 +13,8 @@ interface Props {
   phase: string;
   netDown: boolean;
   onClose: () => void;
+  closable?: boolean;   // 沙盒测试层不可收起
+  toolbar?: ReactNode;  // 顶部附加工具条（沙盒状态/视角切换）
 }
 
 /** 沿道路最短步数：1 = 近端，≥2 = 远端 */
@@ -43,7 +45,7 @@ function Btn({ label, onClick, danger, disabled }: { label: string; onClick: () 
 }
 
 /** 自由探索全屏层：左地图 + 右节点卡；进入节点后切换到节点界面 */
-export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDown, onClose }: Props) {
+export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDown, onClose, closable = true, toolbar }: Props) {
   const [selected, setSelected] = useState<string>(me.nodeId);
   const [view, setView] = useState<string | null>(null); // null = 地图；否则为节点界面 id
   // 位置被系统改动（如午间自动前往食堂）时，同步刷新选中项与节点界面
@@ -66,7 +68,8 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
       <div className="eo-top">
         <span className="eo-title">校园地图</span>
         {!isChair && <span className="eo-ap">行动值 {Math.round(me.ap)}</span>}
-        <button className="eo-close" onClick={onClose}>收起地图 ✕</button>
+        {toolbar}
+        {closable && <button className="eo-close" onClick={onClose}>收起地图 ✕</button>}
       </div>
 
       <div className="eo-body">

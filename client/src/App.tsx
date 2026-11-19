@@ -5,6 +5,7 @@ import { PhaseBanner } from "./components/PhaseBanner";
 import { Terminal } from "./components/Terminal";
 import { IntroSequence } from "./components/IntroSequence";
 import { ExploreOverlay } from "./components/ExploreOverlay";
+import { SandboxScreen } from "./components/SandboxScreen";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -28,14 +29,21 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [debugRoom, setDebugRoom] = useState(false);
+  const [testRoom, setTestRoom] = useState<GameRoom | null>(null);
   const [view, setView] = useState<"hub" | "lobby">("hub");
   const enter = (r: GameRoom, debug: boolean) => { setDebugRoom(debug); setRoom(r); };
+  const enterTest = async () => {
+    try { setTestRoom(await colyseus.create("test", { name: "测试员" })); }
+    catch (e) { console.error("探索测试进入失败", e); }
+  };
   return (
     <ErrorBoundary>
-      {room ? (
+      {testRoom ? (
+        <SandboxScreen room={testRoom} onLeave={() => setTestRoom(null)} />
+      ) : room ? (
         <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} />
       ) : view === "hub" ? (
-        <Hub onEnter={() => setView("lobby")} />
+        <Hub onEnter={() => setView("lobby")} onTest={enterTest} />
       ) : (
         <Lobby onEnter={enter} onBack={() => setView("hub")} />
       )}
@@ -45,7 +53,7 @@ export default function App() {
 
 // ---------- 主页（ATTO_page：各项目统一入口） ----------
 
-function Hub({ onEnter }: { onEnter: () => void }) {
+function Hub({ onEnter, onTest }: { onEnter: () => void; onTest: () => void }) {
   return (
     <div className="lobby">
       <header className="lobby-head">
@@ -59,6 +67,12 @@ function Hub({ onEnter }: { onEnter: () => void }) {
           <span className="hub-card-tag">联机游戏 · 可玩</span>
           <h2>校园规则怪谈</h2>
           <p>自管委在看着你 —— 多人联网规则怪谈生存。开房间，邀好友，遵守规则活到最后。</p>
+          <span className="hub-card-go">进入 ›</span>
+        </button>
+        <button className="hub-card live alt" onClick={onTest}>
+          <span className="hub-card-tag">单人 · 测试模式</span>
+          <h2>探索测试</h2>
+          <p>不进对局，自由走遍校园地图，触发所有场景事件、答题、购物与回收。</p>
           <span className="hub-card-go">进入 ›</span>
         </button>
         <div className="hub-card soon">
