@@ -94,7 +94,7 @@ function Lobby({ onEnter, onBack, solo = false }: {
   const [gender, setGender] = useState<"male" | "female">("male");
   const [faction, setFaction] = useState<"student" | "chair">("student");
   const [code, setCode] = useState("");
-  const [fast, setFast] = useState(solo);
+  const [fast, setFast] = useState(false);
   const [debug, setDebug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -175,7 +175,7 @@ function Lobby({ onEnter, onBack, solo = false }: {
 
         <details className="debug">
           <summary>{solo ? "节奏设置" : "对局设置"}</summary>
-          <label><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 快节奏演示模式（完整流程快速体验）</label>
+          <label><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 快节奏演示模式（30 倍速，仅用于快速过流程）</label>
           {!solo && <label><input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> 调试 · 允许直接开局（人数不足也可开始）</label>}
         </details>
       </div>
