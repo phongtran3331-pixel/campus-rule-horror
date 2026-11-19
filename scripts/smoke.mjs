@@ -44,7 +44,22 @@ async function main() {
     r.onMessage("role", (d) => { roles[r.sessionId] = d; });
     r.onMessage("notice", (m) => notices.push(m.text));
   });
-  host.onMessage("phase", (m) => { phases.push(m); console.log(`[smoke] · 时段 ${m.phase} Day${m.day} @${Math.round((Date.now() - t0) / 100) / 10}s`); });
+  host.onMessage("phase", (m) => {
+    phases.push(m);
+    // 讨论不计时：第 0 日全员确认；之后每日由 bot 自动投活人一票（优先投丁），收束后跳入 14:00
+    if (m.phase === "noon") {
+      if (m.day === 0) all.forEach((r) => r.send("noonDone"));
+      else {
+        const dingId = all[3].sessionId;
+        all.forEach((r) => {
+          const others = all.filter((x) => x.sessionId !== r.sessionId && host.state.players.get(x.sessionId)?.alive);
+          const t = others.find((x) => x.sessionId === dingId) ?? others[0];
+          if (t) r.send("vote", { targetId: t.sessionId });
+        });
+      }
+    }
+    console.log(`[smoke] · 时段 ${m.phase} Day${m.day} @${Math.round((Date.now() - t0) / 100) / 10}s`);
+  });
   host.onMessage("gameover", (g) => { gameover = g; console.log(`[smoke] · 结算 winner=${g.winner}`); });
   const t0 = Date.now();
   const waitPhase = (phase, day, timeout = 60000) => waitFor(() => phases.some((m) => m.phase === phase && m.day === day), timeout);
@@ -181,10 +196,13 @@ async function main() {
   yi.send("dm", { targetId: jia.sessionId, text: "别信戊", coins: 3 });
   check(await waitFor(() => dmGot && stOf(host, jia.sessionId).coins === jiaCoinsBefore + 3, 4000), "私聊送达且转账 +3 币");
 
-  // 9. Day1 午间全员投票放逐（全投丁）
+  // 9. Day1 午间全员投票放逐（bot 已在进 noon 时自动投票，这里再补投一次确保记录在案）
   const ding = all[3].sessionId;
   await waitPhase("noon", 1);
-  all.forEach((r) => r.send("vote", { targetId: ding }));
+  all.forEach((r) => {
+    const t = r.sessionId !== ding && host.state.players.get(ding)?.alive ? ding : all[0].sessionId;
+    if (t !== r.sessionId) r.send("vote", { targetId: t });
+  });
   await waitPhase("afternoon", 1);
   check(await waitFor(() => stOf(all[3], ding).alive === false, 4000), "Day1 午间投票：丁被放逐");
   check(notices.some((t) => t.includes("出局")), "放逐结果已广播（含身份公示）");

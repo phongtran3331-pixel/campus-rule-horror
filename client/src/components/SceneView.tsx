@@ -32,17 +32,18 @@ type Screen = { k: "hub" } | { k: "room"; id: string } | { k: "result" };
  * 上方叙事文本，中间当前可选行动；点选后选项消失，结果文本浮现，再长出新的选项。
  * 屏幕状态机：hub（房间列表/平铺）→ room（房间内）→ result（事件结果+子分支）。
  */
-export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: string; san: number }) {
+export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeId: string; san: number; onExit: () => void }) {
   const [scene, setScene] = useState<SceneJson | null>(null);
   const [screen, setScreen] = useState<Screen>({ k: "hub" });
   const [text, setText] = useState<TextBlock | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<(SceneResult & { eventId: string }) | null>(null);
   const [quiz, setQuiz] = useState<QuizMsg | null>(null);
+  const [grantModal, setGrantModal] = useState<{ names: string[]; refs: string[] } | null>(null);
 
   useEffect(() => {
     let dead = false;
-    setScene(null); setScreen({ k: "hub" }); setText(null); setResult(null); setQuiz(null); setBusy(null);
+    setScene(null); setScreen({ k: "hub" }); setText(null); setResult(null); setQuiz(null); setBusy(null); setGrantModal(null);
     fetch(`scenes/${nodeId}.json`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead) setScene(j); }).catch(() => {});
     return () => { dead = true; };
   }, [nodeId]);
@@ -70,6 +71,10 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
           fake: r.fake || undefined,
           taken: r.taken || undefined,
         });
+        // 获得物资：弹窗确认收下或丢弃
+        if (r.grants.length && !r.taken && !r.fake) {
+          setGrantModal({ names: r.grants.map((g) => g.name), refs: r.grants.map((g) => g.ref) });
+        }
       }
       if (lastQuiz) { setQuiz(lastQuiz); lastQuiz = null; setBusy(null); }
     }, 300);
@@ -141,7 +146,7 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
       }
       opts.push({ key: "back-hub", label: "退出来", run: goHub, dim: true });
     } else {
-      // result 屏幕：子分支 + 操作控件 + 归位选项
+      // result 屏幕：子分支 + 操作控件；分支到底后回到地图（对话分支不可回溯）
       const ev = result ? scene.events[result.eventId] : null;
       if (result && ev?.children) {
         for (const c of ev.children) {
@@ -152,9 +157,7 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
       if (result?.op && !result.fake) {
         for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run });
       }
-      const roomOf = result ? scene.events[result.eventId]?.room : undefined;
-      if (roomOf) opts.push({ key: "back-room", label: `留在${roomOf}`, run: () => goRoom(roomOf), dim: true });
-      opts.push({ key: "back-hub2", label: hasRooms ? "去别的房间" : "继续", run: goHub, dim: true });
+      opts.push({ key: "exit-map", label: "回到地图", run: onExit, dim: true });
     }
   }
 
@@ -191,6 +194,24 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
           </>
         )}
       </div>
+
+      {grantModal && (
+        <div className="sv2-mask">
+          <div className="sv2-modal">
+            <p className="sv2-modal-title">获得物品</p>
+            <p className="sv2-modal-items">{grantModal.names.join("、")}</p>
+            <div className="sv2-modal-btns">
+              <button className="sv2-opt" onClick={() => setGrantModal(null)}>收下</button>
+              <button
+                className="sv2-opt danger"
+                onClick={() => { room.send("packDrop", { refs: grantModal.refs }); setGrantModal(null); }}
+              >
+                丢弃
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

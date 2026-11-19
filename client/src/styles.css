@@ -545,3 +545,13 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .sv2-quiz { background: #141018; border: 1px solid #3a2f4a; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; animation: fade-up .25s ease both; }
 .sv2-quiz-q { color: #e8ddf5; font-size: 15px; line-height: 1.7; margin: 0; }
 .sv2-quiz-rule { color: #a08fb8; font-size: 12.5px; margin: 0; }
+
+/* 获得物资弹窗：收下 / 丢弃 */
+.sv2-mask { position: absolute; inset: 0; background: rgba(4, 6, 10, .72); display: flex; align-items: center; justify-content: center; z-index: 5; animation: svfade .2s ease; }
+.sv2-modal { width: min(320px, 86%); background: #131c28; border: 1px solid #2c4256; border-radius: 12px; padding: 18px 16px 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.sv2-modal-title { margin: 0; text-align: center; color: #7fd7a8; font-size: 13px; letter-spacing: 4px; }
+.sv2-modal-items { margin: 0; text-align: center; color: #e2ecf3; font-size: 15.5px; line-height: 1.8; }
+.sv2-modal-btns { display: flex; gap: 8px; margin-top: 4px; }
+.sv2-modal-btns .sv2-opt { flex: 1; }
+.sv2-opt.danger { border-color: #5a2c2c; color: #d9a0a0; }
+.sv2-opt.danger:hover:not(:disabled) { background: #2a1518; border-color: #c33; color: #f0c8c8; }

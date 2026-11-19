@@ -70,6 +70,7 @@ export class GameRoom extends Room<GameState> {
   private claimed = new Set<string>();                     // 先到先得："sceneId:eventId"（全局一次性）
   private visits = new Map<string, Set<string>>();           // dynamic_visit：本日各节点到访去重集合
   private recycleBatch = new Map<string, number>();          // 回收站：本日累计捡拾件数（每日重置）
+  private noonDone = new Set<string>();                      // 午间确认：在线存活者全员确认/投票后跳入 14:00
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
@@ -93,8 +94,9 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("doorplate", (client) => this.onAction(client, { type: "doorplate" }));
     this.onMessage("respondCall", (client) => this.onAction(client, { type: "respondCall" }));
     this.onMessage("talkRed", (client) => this.onAction(client, { type: "talkRed" }));
-    // M2 流程：投票 / 检举 / 换规
+    // M2 流程：投票 / 检举 / 换规 / 午间确认
     this.onMessage("vote", (client, msg: { targetId?: string }) => this.onVote(client, msg));
+    this.onMessage("noonDone", (client) => this.onNoonDone(client));
     this.onMessage("accuse", (client, msg: { targetId?: string }) => this.onAccuse(client, msg));
     this.onMessage("swapRule", (client, msg: { outId?: string; inId?: string }) => this.onSwapRule(client, msg));
     // M3：探索 / 交易 / 生存
@@ -104,6 +106,7 @@ export class GameRoom extends Room<GameState> {
     // M6：背包交互——购买（货表来自场景文案）/ 回收站选物变现 / 使用消耗品
     this.onMessage("sceneBuy", (client, msg: { sceneId?: string; name?: string }) => this.onSceneBuy(client, msg));
     this.onMessage("packRecycle", (client, msg: { refs?: string[] }) => this.onPackRecycle(client, msg));
+    this.onMessage("packDrop", (client, msg: { refs?: string[] }) => this.onPackDrop(client, msg));
     this.onMessage("usePack", (client, msg: { ref?: string }) => this.onUsePack(client, msg));
     this.onMessage("buy", (client, msg: { item?: string }) => this.onBuy(client, msg));
     this.onMessage("buyMedicine", (client) => this.onBuyMedicine(client));
@@ -263,6 +266,7 @@ export class GameRoom extends Room<GameState> {
       this.recycleBatch.clear();                  // 回收站批次数每日重置
     }
     if (phase === "noon") {
+      this.noonDone.clear();
       // 集体自动前往食堂（不消耗 AP）
       this.state.players.forEach((p, pid) => {
         if (!p.alive) return;
@@ -271,7 +275,11 @@ export class GameRoom extends Room<GameState> {
         if (!v) { v = new Set(); this.visits.set("canteen", v); }
         v.add(pid);
       });
-      this.broadcast("notice", { text: `午间讨论开始${day === 0 ? "（第 0 日不投票）" : "，请全员投票（弃权视为违规）"}` });
+      this.broadcast("notice", {
+        text: day === 0
+          ? "午间讨论开始（第 0 日不投票）。讨论不计时——全员确认后时间进入 14:00。"
+          : "午间讨论开始。讨论不计时——全员投票后时间进入 14:00。",
+      });
     }
     if (phase === "night") {
       this.accuse = { attempts: 0, failures: 0, swapped: false };
@@ -468,17 +476,40 @@ export class GameRoom extends Room<GameState> {
     this.runChecks(client.sessionId, action);
   }
 
+  /** 在线且存活的玩家 */
+  private aliveConnected(): string[] {
+    const out: string[] = [];
+    this.state.players.forEach((p, id) => { if (p.alive && p.connected) out.push(id); });
+    return out;
+  }
+
+  /** 午间确认：第 0 日不投票，全员确认后跳入 14:00；第 1 日起由投票收束（见 onVote） */
+  private onNoonDone(client: Client) {
+    if (this.state.phase !== "noon") return;
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || !p.connected || this.state.day !== 0) return;
+    this.noonDone.add(client.sessionId);
+    const need = this.aliveConnected().length;
+    this.broadcast("notice", { text: `${p.name} 确认讨论结束（${this.noonDone.size}/${need}）` });
+    if (this.noonDone.size >= need) this.onPhaseEnd("noon", this.state.day);
+  }
+
   private onVote(client: Client, msg: { targetId?: string }) {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive) return;
     if (this.state.phase !== "noon" || this.state.day === 0) return;
     const targetId = String(msg?.targetId ?? "");
     const t = this.state.players.get(targetId);
-    if (!t || !t.alive || targetId === client.sessionId) return; // 不允许自投
+    if (!t || !t.alive || targetId === client.sessionId) {
+      this.sendNoticeTo(client.sessionId, "不能投自己，也不能投已出局的人。");
+      return;
+    }
     this.votes.set(client.sessionId, targetId);
     const rec = this.recs.get(client.sessionId);
     if (rec) rec.voted = true;
     this.sendNoticeTo(client.sessionId, `投票已记录。当前已投 ${this.votes.size} 人`);
+    // 讨论不计时：在线存活者全员投出后，时间自动跳入 14:00
+    if (this.votes.size >= this.aliveConnected().length) this.onPhaseEnd("noon", this.state.day);
   }
 
   /** 检举：仅编号最小的存活理事长，仅夜间；弹药 = 今日干事违规事件数 */
@@ -809,6 +840,21 @@ export class GameRoom extends Room<GameState> {
       if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); return; }
     }
     this.sendNoticeTo(client.sessionId, `回收了 ${refs.length} 件物品，+${total} 币。${note}`);
+  }
+
+  /** 丢弃背包物品（场景获得弹窗「丢弃」按钮；每件扣 1 数量） */
+  private onPackDrop(client: Client, msg: { refs?: string[] }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive) return;
+    const refs = Array.isArray(msg?.refs) ? msg.refs.map(String) : [];
+    const dropped: string[] = [];
+    for (const ref of refs) {
+      const have = p.pack.get(ref) ?? 0;
+      if (have <= 0) continue;
+      if (have > 1) p.pack.set(ref, have - 1); else p.pack.delete(ref);
+      dropped.push(this.refName.get(ref) ?? ref);
+    }
+    if (dropped.length) this.sendNoticeTo(client.sessionId, `已丢弃：${dropped.join("、")}`);
   }
 
   /** 使用消耗品：效果取自 Wiki effect 文本（饥饿+15 / HP+8 / SAN+12 / AP+1） */

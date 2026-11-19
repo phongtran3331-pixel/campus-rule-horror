@@ -366,6 +366,21 @@ function VotePanel({ room, me, players, chairs }: {
   );
 }
 
+/** 第 0 日午间：讨论不计时，全员确认后跳入 14:00 */
+function NoonConfirm({ room }: { room: GameRoom }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="vp">
+      <p className="vp-title">午间讨论（第 0 日不投票）</p>
+      {!done ? (
+        <button className="act" onClick={() => { room.send("noonDone"); setDone(true); }}>讨论结束，确认进入 14:00</button>
+      ) : (
+        <p className="vp-done">已确认。等待其他人确认……</p>
+      )}
+    </div>
+  );
+}
+
 /** 理事长夜间面板：弹药状态 / 检举（两步确认）/ 换规（板上规则 ↔ 备选池） */
 function ChairPanel({ room, me, players, chairs, board, pool, accuse }: {
   room: GameRoom; me: Player;
@@ -522,6 +537,9 @@ function ExplorePanel({ p }: { p: Props }) {
       )}
       <Btn label="私聊 / 转账" onClick={() => setDmOpen((v) => !v)} />
       {dmOpen && <DmForm room={room} players={players} meId={room.sessionId} />}
+      {phase === "noon" && day === 0 && (
+        <NoonConfirm room={room} />
+      )}
       {phase === "noon" && day > 0 && (
         <VotePanel room={room} me={me} players={players} chairs={chairs} />
       )}

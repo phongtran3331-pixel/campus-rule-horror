@@ -65,9 +65,10 @@ async function playOne(gameIdx) {
             else if (me.hunger < 45) r.send("eat", { nodeId: me.nodeId });
           }
         }
-        if (phase === "noon" && host.state.day > 0 && Math.random() < 0.8) {
-          const t = rnd(aliveOthers(r.state, r.sessionId));
-          if (t) r.send("vote", { targetId: t });
+        if (phase === "noon") {
+          // 讨论不计时：第 0 日全员确认，之后每日全员投票，时间才跳入 14:00
+          if (host.state.day === 0) r.send("noonDone");
+          else { const t = rnd(aliveOthers(r.state, r.sessionId)); if (t) r.send("vote", { targetId: t }); }
         }
         if (phase === "night" && isChair && Math.random() < 0.6) {
           const t = rnd(aliveOthers(r.state, r.sessionId));

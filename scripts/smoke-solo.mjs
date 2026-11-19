@@ -40,6 +40,8 @@ async function main() {
 
   // 中午自动前往食堂（与正式一致的强制传送）
   check(await waitFor(() => stu.state.phase === "noon" && stu.state.players.get(stu.sessionId).nodeId === "canteen", 60000), "午间集体自动前往食堂");
+  // 第 0 日讨论不计时：单人确认即可进入 14:00（挂机玩家不在线，不计入确认）
+  stu.send("noonDone");
 
   // 第 1 日午间投票：挂机玩家是合法票靶
   check(await waitFor(() => stu.state.day >= 1, 90000), "时间流转进入 Day1");

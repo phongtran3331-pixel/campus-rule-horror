@@ -1,11 +1,12 @@
-// 一昼夜流程计时（实测 11 分钟过紧，探索时段翻倍：20 分钟五时段；timeScale 供测试加速，正式局 = 1）
-// 虚拟时刻换算：1 现实分钟 = 30 虚拟分钟，时段虚拟窗口见 client/src/lib/vtime.ts
+// 一昼夜流程计时：1 现实分钟 = 60 虚拟分钟
+// morning 08:00–11:00 探索；noon 11:00 起讨论（停止计时，全员确认/投票后跳入 14:00）；
+// afternoon 14:00–17:00、evening 17:00–21:00 探索；night 夜间讨论与检举。timeScale 供测试加速。
 export const PHASE_MINUTES: Record<string, number> = {
-  morning: 6,
-  noon: 3,
-  afternoon: 6,
+  morning: 3,
+  noon: 0,      // 0 = 不计时
+  afternoon: 3,
   evening: 4,
-  night: 1,
+  night: 2,
 };
 export const PHASE_ORDER = ["morning", "noon", "afternoon", "evening", "night"] as const;
 export type Phase = (typeof PHASE_ORDER)[number];
@@ -17,7 +18,9 @@ export class PhaseTimer {
 
   start(phase: Phase, day: number, onExpire: (phase: Phase, day: number) => void) {
     this.stop();
-    const ms = (PHASE_MINUTES[phase] * 60_000) / this.timeScale;
+    const minutes = PHASE_MINUTES[phase];
+    if (!minutes) return 0; // 不计时时段（讨论）：由全员确认/投票结束
+    const ms = (minutes * 60_000) / this.timeScale;
     this.timer = setTimeout(() => onExpire(phase, day), ms);
     return Date.now() + ms;
   }

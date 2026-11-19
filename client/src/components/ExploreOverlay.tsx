@@ -155,10 +155,9 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
       </div>
 
       {/* 文游式全屏场景：上方叙事文本，中间选项，底部系统行动 */}
-      <SceneView room={room} nodeId={at} san={me.san} />
+      <SceneView room={room} nodeId={at} san={me.san} onExit={onBack} />
 
       <div className="row wrap eo-actions">
-        <Btn label="翻找杂物（1 AP）" onClick={() => send("explore")} />
         {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
         {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
         {at === "market" && <Btn label="买食物（5币）" onClick={() => send("buy", { item: "food" })} />}
