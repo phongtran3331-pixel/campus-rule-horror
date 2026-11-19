@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
 import { MapView } from "./MapView";
+import { SceneView } from "./SceneView";
 
 interface Props {
   room: GameRoom;
@@ -12,6 +13,8 @@ interface Props {
   phase: string;
   netDown: boolean;
   onClose: () => void;
+  closable?: boolean;   // 沙盒测试层不可收起
+  toolbar?: ReactNode;  // 顶部附加工具条（沙盒状态/视角切换）
 }
 
 /** 沿道路最短步数：1 = 近端，≥2 = 远端 */
@@ -42,7 +45,7 @@ function Btn({ label, onClick, danger, disabled }: { label: string; onClick: () 
 }
 
 /** 自由探索全屏层：左地图 + 右节点卡；进入节点后切换到节点界面 */
-export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDown, onClose }: Props) {
+export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDown, onClose, closable = true, toolbar }: Props) {
   const [selected, setSelected] = useState<string>(me.nodeId);
   const [view, setView] = useState<string | null>(null); // null = 地图；否则为节点界面 id
   // 位置被系统改动（如午间自动前往食堂）时，同步刷新选中项与节点界面
@@ -65,7 +68,8 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
       <div className="eo-top">
         <span className="eo-title">校园地图</span>
         {!isChair && <span className="eo-ap">行动值 {Math.round(me.ap)}</span>}
-        <button className="eo-close" onClick={onClose}>收起地图 ✕</button>
+        {toolbar}
+        {closable && <button className="eo-close" onClick={onClose}>收起地图 ✕</button>}
       </div>
 
       <div className="eo-body">
@@ -126,6 +130,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
   const send = (type: string, msg?: unknown) => room.send(type, msg);
   const at = node.id;
   const [imgOk, setImgOk] = useState(true);
+  const [logOpen, setLogOpen] = useState(false);
   return (
     <div className="eo-card eo-node">
       <div className="eo-node-head">
@@ -148,8 +153,11 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
 
       <p className="eo-desc">{node.desc}</p>
 
+      {/* M6：真实场景文本（环视 + 事件 + 结算） */}
+      <SceneView room={room} nodeId={at} san={me.san} />
+
       <div className="row wrap eo-actions">
-        <Btn label="探索（1 AP）" onClick={() => send("explore")} />
+        <Btn label="翻找杂物（1 AP）" onClick={() => send("explore")} />
         {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
         {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
         {at === "market" && <Btn label="买食物（5币）" onClick={() => send("buy", { item: "food" })} />}
@@ -161,10 +169,14 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
         {at === "admin" && (
           <>
             <Btn label="调监控" onClick={() => send("camera")} />
-            <Btn label="调阅设施记录（🪪1）" onClick={() => {
-              const f = window.prompt("设施名：超市售货机 / 校医院药房 / 图书馆闸机 / 操场闸机 / 体育馆闸机 / 社区闸机 / 行政楼影像室 / 网络中心");
-              if (f) send("inspectLog", { facility: f.trim() });
-            }} />
+            <Btn label="调阅设施记录（🪪1）" onClick={() => setLogOpen((v) => !v)} />
+            {logOpen && (
+              <div className="vp-list log-facilities">
+                {["超市售货机", "校医院药房", "图书馆闸机", "操场闸机", "体育馆闸机", "社区闸机", "行政楼影像室", "网络中心"].map((f) => (
+                  <button key={f} className="vp-pick" onClick={() => { send("inspectLog", { facility: f }); setLogOpen(false); }}>{f}</button>
+                ))}
+              </div>
+            )}
             {me.scissors > 0 && !netDown && <Btn label="剪网线" danger onClick={() => send("cutNet")} />}
             {netDown && <Btn label="修复网线（1 AP）" onClick={() => send("repairNet")} />}
           </>

@@ -15,8 +15,9 @@ import {
 import { PRICES, rollLoot } from "../data/loot.js";
 import { exploreText, FOOD_NAMES, JUNK_NAMES, MEDICINE_NAMES, NPC, pick } from "../data/flavor.js";
 import { ITEM_CATALOG, rollTreasure } from "../data/items.js";
+import { loadScenes, loadWiki, loadShop, refToName, parseEvent, parseQuizBranch, type SceneData } from "../logic/SceneEngine.js";
 
-interface JoinOptions {
+export interface JoinOptions {
   name?: string;
   gender?: string;
   timeScale?: number;
@@ -58,6 +59,17 @@ export class GameRoom extends Room<GameState> {
   private pendingApBonus = new Set<string>();              // 表彰兑现：次日 AP 15
   // M5：交互文本库——子房间位置追踪（仅叙事用，不进同步状态）
   private subroom = new Map<string, string>();             // sessionId -> "<nodeId>:<房号>"
+  // M6：真实场景文本——服务端只判状态与编号，文案客户端渲染
+  private scenes: Record<string, SceneData> = loadScenes();
+  private wiki = loadWiki();
+  private shop = loadShop(this.wiki, this.scenes);
+  private refName = refToName(this.wiki);
+  private claimed = new Set<string>();                     // 先到先得："sceneId:eventId"（全局一次性）
+  private visits = new Map<string, Set<string>>();           // dynamic_visit：本日各节点到访去重集合
+  private recycleBatch = new Map<string, number>();          // 回收站：本日累计捡拾件数（每日重置）
+  // 沙盒（探索测试房，TestRoom 置 true）：无对局流程，永不淘汰，数值自动回补
+  protected sandbox = false;
+  private sandboxTimer?: NodeJS.Timeout;
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
@@ -83,6 +95,12 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("swapRule", (client, msg: { outId?: string; inId?: string }) => this.onSwapRule(client, msg));
     // M3：探索 / 交易 / 生存
     this.onMessage("explore", (client) => this.onExplore(client));
+    // M6：场景文本事件（含答题与先到先得结算）
+    this.onMessage("sceneEvent", (client, msg: { sceneId?: string; eventId?: string; answer?: string }) => this.onSceneEvent(client, msg));
+    // M6：背包交互——购买（货表来自场景文案）/ 回收站选物变现 / 使用消耗品
+    this.onMessage("sceneBuy", (client, msg: { sceneId?: string; name?: string }) => this.onSceneBuy(client, msg));
+    this.onMessage("packRecycle", (client, msg: { refs?: string[] }) => this.onPackRecycle(client, msg));
+    this.onMessage("usePack", (client, msg: { ref?: string }) => this.onUsePack(client, msg));
     this.onMessage("buy", (client, msg: { item?: string }) => this.onBuy(client, msg));
     this.onMessage("buyMedicine", (client) => this.onBuyMedicine(client));
     this.onMessage("useMedicine", (client, msg: { kind?: string }) => this.onUseMedicine(client, msg));
@@ -105,9 +123,35 @@ export class GameRoom extends Room<GameState> {
     if (this.timeScale > 1) {
       this.onMessage("debug", (client, msg: { give?: string }) => this.onDebug(client, msg));
     }
+    // 沙盒测试房：抽好规则板即开放全图探索，不启动对局计时
+    if (this.sandbox) {
+      const drawn = drawRuleBoard();
+      this.board = drawn.board;
+      this.pool = drawn.pool;
+      this.state.day = 0;
+      this.state.phase = "morning";
+      this.state.phaseStartedAt = Date.now();
+      this.onMessage("sandboxRole", (client) => this.onSandboxRole(client));
+      this.onMessage("sandboxReset", (client) => this.onSandboxReset(client));
+      this.sandboxTimer = setInterval(() => this.sandboxTopUp(), 2000);
+    }
   }
 
   onJoin(client: Client, options: JoinOptions) {
+    // 沙盒测试房：单人自由进出，随到随探
+    if (this.sandbox) { this.joinSandbox(client, options); return; }
+    // 对局进行中：仅允许重连（sessionId 已有角色）；新来访者直接请出
+    if (this.state.phase !== "lobby") {
+      if (!this.state.players.has(client.sessionId)) {
+        this.sendNoticeTo(client.sessionId, "对局进行中，无法中途加入。");
+        client.leave();
+        return;
+      }
+      const old = this.state.players.get(client.sessionId)!;
+      old.connected = true;
+      this.broadcast("notice", { text: `${old.name} 重新连线` });
+      return;
+    }
     const p = new Player();
     p.name = String(options.name || `同学${this.state.players.size + 1}`).slice(0, 12);
     p.gender = options.gender === "female" ? "female" : "male";
@@ -116,7 +160,13 @@ export class GameRoom extends Room<GameState> {
     this.broadcast("notice", { text: `${p.name} 进入了校园（${this.state.players.size} 人在线）` });
   }
 
-  onLeave(client: Client) {
+  onLeave(client: Client, consented?: boolean) {
+    if (this.sandbox) {
+      this.state.players.delete(client.sessionId);
+      this.factionOf.delete(client.sessionId);
+      this.recs.delete(client.sessionId);
+      return;
+    }
     const p = this.state.players.get(client.sessionId);
     if (this.state.phase === "lobby") {
       this.state.players.delete(client.sessionId);
@@ -126,12 +176,25 @@ export class GameRoom extends Room<GameState> {
       }
     } else if (p) {
       p.connected = false; // 游戏中掉线保留角色
+      // 非主动离开（掉线/刷新）给 90 秒重连窗口，重连即恢复原角色
+      if (!consented && p.alive) {
+        this.allowReconnection(client, 90)
+          .then(() => {
+            const cur = this.state.players.get(client.sessionId);
+            if (cur && !cur.connected) {
+              cur.connected = true;
+              this.broadcast("notice", { text: `${cur.name} 重新连线` });
+            }
+          })
+          .catch(() => { /* 超时未归，角色保留但离线 */ });
+      }
     }
   }
 
   onDispose() {
     this.timer.stop();
     if (this.netTimer) clearTimeout(this.netTimer);
+    if (this.sandboxTimer) clearInterval(this.sandboxTimer);
   }
 
   // ---------- 开局 ----------
@@ -164,6 +227,7 @@ export class GameRoom extends Room<GameState> {
       this.clients.find((c) => c.sessionId === id)?.send("role", {
         faction: f,
         chairs: f === "chair" ? chairs.map((c) => ({ id: c, name: this.state.players.get(c)!.name })) : [],
+        pool: f === "chair" ? this.pool : [], // 理事长需掌握备选规则池（换规用）
       });
     });
 
@@ -190,10 +254,18 @@ export class GameRoom extends Room<GameState> {
       this.votes.clear();
       this.roomUsed.clear();                      // 社区房间功能每日刷新
       this.bookings.delete(day - 2);              // 预约记录保留到次日供社区部查询，之后清理
+      this.visits.clear();                        // dynamic_visit 每日重置
+      this.recycleBatch.clear();                  // 回收站批次数每日重置
     }
     if (phase === "noon") {
       // 集体自动前往食堂（不消耗 AP）
-      this.state.players.forEach((p) => { if (p.alive) p.nodeId = "canteen"; });
+      this.state.players.forEach((p, pid) => {
+        if (!p.alive) return;
+        p.nodeId = "canteen";
+        let v = this.visits.get("canteen");
+        if (!v) { v = new Set(); this.visits.set("canteen", v); }
+        v.add(pid);
+      });
       this.broadcast("notice", { text: `午间讨论开始${day === 0 ? "（第 0 日不投票）" : "，请全员投票（弃权视为违规）"}` });
     }
     if (phase === "night") {
@@ -217,6 +289,7 @@ export class GameRoom extends Room<GameState> {
       if (chief) {
         this.broadcast("notice", { text: `理事长讨论时间。今日弹药：${this.todayViolationEvents} 发（每有一处干事违规 +1 发）` });
       }
+      this.pushAccuseState();
     }
   }
 
@@ -319,10 +392,19 @@ export class GameRoom extends Room<GameState> {
       if (p.coins < PRICES.gym) { this.sendNoticeTo(client.sessionId, "体育馆入场费 5 币，你的钱不够。"); return; }
       p.coins -= PRICES.gym;
     }
+    // 行政楼门禁：干事需通行卡或万能钥匙
+    if (target.id === "admin" && !isChair && !this.hasAdminPass(client.sessionId)) {
+      this.sendNoticeTo(client.sessionId, "行政楼门禁亮红：需要行政楼通行卡。");
+      return;
+    }
 
     const from = p.nodeId;
     p.nodeId = target.id;
     this.subroom.delete(client.sessionId); // 换节点即离开原房间
+    // dynamic_visit：本日节点到访去重（含强制传送）
+    let v = this.visits.get(target.id);
+    if (!v) { v = new Set(); this.visits.set(target.id, v); }
+    v.add(client.sessionId);
     if (!isChair) p.ap -= cost; // 理事长自由活动不耗 AP
     this.runChecks(client.sessionId, { type: "move", from, to: target.id });
     // R1 单独相处：双向违规（同节点另一性别玩家同样违规）
@@ -412,17 +494,20 @@ export class GameRoom extends Room<GameState> {
       // 匿名担保生效：检举被抵消，按"未成立"处理（不暴露担保存在）
       this.accuse.failures++;
       const left = 2 - this.accuse.failures;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】检举未成立，无事发生。${left > 0 ? `再失败 ${left} 次将停止今晚检举权。` : "今晚检举权终止。"}` });
       return;
     }
     if (guilty) {
       const dmg = 25 + 5 * this.state.day;
       t.hp -= dmg;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】理事长检举成立：${t.name} 今日确有违规，HP -${dmg}（余 ${Math.max(0, Math.round(t.hp))}）。检举成功，可继续检举或更换一条规则。` });
       if (t.hp <= 0) this.eliminate(targetId, "检举处决");
     } else {
       this.accuse.failures++;
       const left = 2 - this.accuse.failures;
+      this.pushAccuseState();
       this.broadcast("notice", { text: `【夜间通报】检举未成立，无事发生。${left > 0 ? `再失败 ${left} 次将停止今晚检举权。` : "今晚检举权终止。"}` });
     }
   }
@@ -446,6 +531,27 @@ export class GameRoom extends Room<GameState> {
     // 广播具体修正内容（理事长可借此放烟雾弹）
     this.broadcast("ruleSwap", { board: this.board });
     this.broadcast("notice", { text: `【校规修正】${outRule.text} 即日起废止；新规定：${inRule.text}` });
+    this.pushAccuseState();
+    // 备选池已变，同步给全体理事长
+    this.pushRulePool();
+  }
+
+  /** 检举状态推送：夜间进入 / 每次检举后 / 换规后（客户端理事长面板的数据源） */
+  private pushAccuseState() {
+    this.broadcast("accuseState", {
+      attempts: this.accuse.attempts,
+      ammo: this.todayViolationEvents,
+      failures: this.accuse.failures,
+      swapped: this.accuse.swapped,
+    });
+  }
+
+  /** 备选规则池推送（仅理事长；换规后池子变化） */
+  private pushRulePool() {
+    const poolMsg = { pool: this.pool };
+    for (const c of this.clients) {
+      if (this.factionOf.get(c.sessionId) === "chair") c.send("rulePool", poolMsg);
+    }
   }
 
   // ---------- M3：探索 / 交易 / 生存 ----------
@@ -466,6 +572,7 @@ export class GameRoom extends Room<GameState> {
     const parts: string[] = [];
     if (loot.junk) {
       p.junk += loot.junk; p.junkValue += loot.junkValue ?? 0;
+      this.recycleBatch.set(client.sessionId, (this.recycleBatch.get(client.sessionId) ?? 0) + loot.junk);
       const pool = [...(JUNK_NAMES[p.nodeId] ?? JUNK_NAMES.dorm)];
       const names: string[] = [];
       for (let i = 0; i < loot.junk && pool.length; i++) names.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
@@ -487,6 +594,256 @@ export class GameRoom extends Room<GameState> {
     const roomId = this.subroom.get(client.sessionId) ?? null;
     const scene = exploreText(roomId, p.nodeId, p.san);
     this.sendNoticeTo(client.sessionId, scene + (parts.length ? `\n探索收获：${parts.join("、")}。` : ""));
+  }
+
+  // ---------- M6：场景文本事件（真实探索文案 + 机制结算） ----------
+
+  /**
+   * 场景事件：客户端按 campus_text.json 渲染 choice，点击后提交到这里结算。
+   * 理事长一律假造交互（返回结构与房间信息，不消耗、不改变、不占用点位）。
+   */
+  private onSceneEvent(client: Client, msg: { sceneId?: string; eventId?: string; answer?: string }) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id);
+    const sceneId = String(msg?.sceneId ?? "");
+    const eventId = String(msg?.eventId ?? "");
+    const scene = this.scenes[sceneId];
+    const ev = scene?.events[eventId];
+    if (process.env.SMOKE_DEBUG) console.log(`[scene] ${id} ${sceneId}/${eventId} node=${p?.nodeId} phase=${this.state.phase} ev=${!!ev} alive=${p?.alive}`);
+    if (!p || !p.alive) return;
+    if (p.nodeId !== sceneId) return;
+    const exploreOk = this.sandbox
+      || ["morning", "afternoon", "evening"].includes(this.state.phase)
+      || (sceneId === "canteen" && this.state.phase === "noon");
+    if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
+    const isChair = this.factionOf.get(id) === "chair";
+
+    // P1 幻觉：SAN≤30 的干事在教学楼会看到「不存在的 404 教室」（客户端幻觉入口，不走场景 JSON）
+    if (!ev && eventId === "__illusion") {
+      if (isChair || !sceneId.startsWith("t")) return;
+      this.onIllusion(client, sceneId);
+      return;
+    }
+    if (!ev) return;
+    const key = `${sceneId}:${eventId}`;
+    const parsed = parseEvent(ev);
+
+    if (isChair) {
+      // 假装交互：能看房间信息，不能带走
+      const fakeTexts: Record<string, string> = {
+        gate: "你站在门楼里看了一圈。登记本、钥匙板、快递盒……每件东西你都记住了位置和价值。",
+        woods: "你走进林子。树洞里、树根下、长椅缝隙里藏着什么，你一样样看过去，什么都没动。",
+      };
+      client.send("sceneResult", {
+        sceneId, eventId, fake: true,
+        grants: [], states: {},
+        text: fakeTexts[sceneId] ?? "你做了个动作。这里有什么、值多少，你都一清二楚，但按规矩，你不能拿走。",
+      });
+      return;
+    }
+
+    // 答题：首次提交返回题目（answer 缺省），客户端弹填空 UI 后再带答案提交
+    if (parsed.quiz && msg.answer == null) {
+      client.send("sceneQuiz", {
+        sceneId, eventId,
+        question: parsed.quiz.question,
+        numeric: parsed.quiz.ruleType !== "static", // dynamic 题填数字，静态题填文本
+        rule: parsed.quiz.rule,
+      });
+      return;
+    }
+
+    let grants = parsed.grants;
+    let states = parsed.states;
+    const visitN = String(this.visits.get(sceneId)?.size ?? 1);
+    let text = ev.result.replace(/\{今日到访\}/g, visitN).replace(/\{[^}]*\}/g, "").trim();
+
+    if (parsed.quiz) {
+      const body = (ev.result.match(/\{答题:(.*)\}$/)?.[1]) ?? "";
+      const correct = this.isQuizCorrect(parsed.quiz, String(msg.answer ?? ""), sceneId);
+      const side = correct ? "答对" : "答错";
+      const branch = parseQuizBranch(body, side);
+      grants = branch.grants;
+      states = branch.states;
+      text = branch.text || (side === "答对" ? "回答正确。" : "回答错误。");
+    }
+
+    // 先到先得（含答题奖励）：判定后再查点位占用，领过即回空态文案
+    if (grants.length && this.claimed.has(key)) {
+      client.send("sceneResult", {
+        sceneId, eventId, taken: true, grants: [], states: {},
+        text: ev.result_taken ?? "来晚了，什么都没有剩下。",
+      });
+      return;
+    }
+
+    // 消耗预检：行动值与货币
+    const apCost = Math.max(0, -(states.ap ?? 0));
+    if (apCost > 0 && p.ap < apCost) { this.sendNoticeTo(id, `行动值不足（需 ${apCost} AP）。`); return; }
+    if (parsed.coinCost && p.coins < parsed.coinCost) { this.sendNoticeTo(id, `钱不够（需 ${parsed.coinCost} 币）。`); return; }
+
+    // 结算
+    if (grants.length) this.claimed.add(key);
+    if (parsed.coinCost) p.coins -= parsed.coinCost;
+    if (states.ap) p.ap = Math.max(0, p.ap + states.ap);
+    if (states.hunger) p.hunger = Math.min(100, Math.max(0, p.hunger + states.hunger));
+    if (states.hp) p.hp = Math.min(100, Math.max(0, p.hp + states.hp));
+    if (states.san) p.san = Math.min(100, Math.max(0, p.san + states.san));
+    for (const g of grants) p.pack.set(g.ref, (p.pack.get(g.ref) ?? 0) + 1);
+
+    // 食堂问题食物：{操作:随机判定——概率食物存在问题}（以文本标注为准，20% 概率 HP/SAN -10）
+    let foodNote = "";
+    if (parsed.foodRisk && Math.random() < 0.2) {
+      p.hp = Math.max(0, p.hp - 10);
+      p.san = Math.max(0, p.san - 10);
+      foodNote = " 但今天的菜有点不对劲……（HP -10，SAN -10）";
+    }
+    if (p.hp <= 0) this.eliminate(id, "意外身亡");
+    if (p.hunger <= 0) this.eliminate(id, "力竭");
+
+    client.send("sceneResult", {
+      sceneId, eventId, taken: false, fake: false,
+      op: parsed.op ?? null,
+      grants: grants.map((g) => ({ name: g.name, ref: g.ref })),
+      states,
+      text: text + foodNote,
+    });
+  }
+
+  // ---------- M6：背包交互 ----------
+
+  /** 幻觉事件：不存在的 404 教室。SAN≤30 可见；每座教学楼每天一次；风险与机遇并存 */
+  private onIllusion(client: Client, sceneId: string) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id)!;
+    if (p.san > 30) { this.sendNoticeTo(id, "你揉了揉眼睛。走廊尽头什么都没有。"); return; }
+    if (p.ap < 1) { this.sendNoticeTo(id, "行动值不足（需 1 AP）。"); return; }
+    const key = `${sceneId}:__illusion:${this.state.day}`;
+    p.ap -= 1;
+    if (this.claimed.has(key)) {
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: true, fake: false, op: null,
+        grants: [], states: {},
+        text: "404 的门虚掩着。你今天已经进去过一次了——至少你记得只进去过一次。",
+      });
+      return;
+    }
+    const looty = Math.random() < 0.4;
+    if (looty) {
+      this.claimed.add(key);
+      // 从 wiki 高价值段随机一件（物品本不该"存在"，所以格外值钱）
+      const highs = Object.entries(this.wiki).filter(([, w]) => w.seg === "高");
+      const [name, w] = highs[Math.floor(Math.random() * highs.length)] ?? ["名牌钢笔", this.wiki["名牌钢笔"]];
+      const ref = `${w?.seg ?? "高"}#${w?.num ?? 1}`;
+      p.pack.set(ref, (p.pack.get(ref) ?? 0) + 1);
+      p.san = Math.max(0, p.san - 4);
+      if (p.san <= 0) { this.eliminate(id, "精神崩溃"); return; }
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: false, fake: false, op: null,
+        grants: [{ name, ref }], states: { san: -4, ap: -1 },
+        text: "404 教室里整整齐齐摆着一张课桌，桌上放着一件不属于这所学校的东西。你把它收进了包里。教室在你身后消失了。",
+      });
+    } else {
+      p.san = Math.max(0, p.san - 8);
+      if (p.san <= 0) { this.eliminate(id, "精神崩溃"); return; }
+      const texts = [
+        "404 教室里坐满了人，全部背对着你。你退出来的瞬间，忘了他们穿的是什么颜色。",
+        "你在 404 的黑板上看到自己的名字，写在值日生一栏。你不记得今天轮到你。",
+        "404 的讲台上放着一本点名册。你翻开的那页是空的，再翻一页，还是空的。你合上书，书脊上印着你的学号。",
+      ];
+      client.send("sceneResult", {
+        sceneId, eventId: "__illusion", taken: false, fake: false, op: null,
+        grants: [], states: { san: -8, ap: -1 },
+        text: texts[Math.floor(Math.random() * texts.length)],
+      });
+    }
+  }
+
+  /** 场景货表购买：name 须命中本节点 {操作:购买} 清单；理事长假买（币与货都不动） */
+  private onSceneBuy(client: Client, msg: { sceneId?: string; name?: string }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive) return;
+    const sceneId = String(msg?.sceneId ?? "");
+    const name = String(msg?.name ?? "");
+    const item = this.shop.find((s) => s.sceneId === sceneId && s.name === name);
+    if (!item) return;
+    if (p.nodeId !== sceneId) { this.sendNoticeTo(client.sessionId, "不在这里，买不到。"); return; }
+    if (this.factionOf.get(client.sessionId) === "chair") {
+      this.sendNoticeTo(client.sessionId, "购买成功。售货机没有少任何东西——本来也不会少。");
+      return;
+    }
+    if (p.coins < item.price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${item.price} 币）。`); return; }
+    p.coins -= item.price;
+    p.pack.set(item.ref, (p.pack.get(item.ref) ?? 0) + 1);
+    this.log(sceneId === "clinic" ? "校医院药房" : sceneId === "market" ? "超市售货机" : "售货机", `购买 ${name}`);
+    this.sendNoticeTo(client.sessionId, `买到了${name}（-${item.price} 币），已入背包。`);
+  }
+
+  /** 回收站选物变现：按 Wiki 回收价合计；单次提交超过 5 件随机 SAN -1~-20（文案承诺） */
+  private onPackRecycle(client: Client, msg: { refs?: string[] }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.nodeId !== "recycle") return;
+    if (this.factionOf.get(client.sessionId) === "chair") return;
+    const refs = Array.isArray(msg?.refs) ? msg.refs.map(String) : [];
+    if (!refs.length) { this.sendNoticeTo(client.sessionId, "背包里没有选中要回收的东西。"); return; }
+    let total = 0;
+    for (const ref of refs) {
+      const have = p.pack.get(ref) ?? 0;
+      if (have <= 0) continue;
+      const name = this.refName.get(ref) ?? ref;
+      const v = this.wiki[name]?.value ?? 1;
+      total += v;
+      if (have > 1) p.pack.set(ref, have - 1); else p.pack.delete(ref);
+    }
+    if (total <= 0) { this.sendNoticeTo(client.sessionId, "这些东西不值钱。"); return; }
+    p.coins += total;
+    let note = "";
+    if (refs.length > 5) {
+      const dmg = 1 + Math.floor(Math.random() * 20);
+      p.san = Math.max(0, p.san - dmg);
+      note = ` 递得太多了，老板的眼睛在你脸上停了一秒。（SAN -${dmg}）`;
+      if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); return; }
+    }
+    this.sendNoticeTo(client.sessionId, `回收了 ${refs.length} 件物品，+${total} 币。${note}`);
+  }
+
+  /** 使用消耗品：效果取自 Wiki effect 文本（饥饿+15 / HP+8 / SAN+12 / AP+1） */
+  private onUsePack(client: Client, msg: { ref?: string }) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive) return;
+    if (this.factionOf.get(client.sessionId) === "chair") { this.sendNoticeTo(client.sessionId, "你做了个使用的姿势。数值与你无关。"); return; }
+    const ref = String(msg?.ref ?? "");
+    const have = p.pack.get(ref) ?? 0;
+    const name = this.refName.get(ref) ?? ref;
+    const w = this.wiki[name];
+    if (have <= 0 || !w) return;
+    if (have > 1) p.pack.set(ref, have - 1); else p.pack.delete(ref);
+    const applied: string[] = [];
+    for (const m of (w.effect ?? "").matchAll(/(饥饿|HP|SAN|AP)([+-]\d+)/g)) {
+      const v = Number(m[2]);
+      if (m[1] === "AP") p.ap = Math.min(20, Math.max(0, p.ap + v));
+      else if (m[1] === "饥饿") p.hunger = Math.min(100, Math.max(0, p.hunger + v));
+      else if (m[1] === "HP") p.hp = Math.min(100, Math.max(0, p.hp + v));
+      else p.san = Math.min(100, Math.max(0, p.san + v));
+      applied.push(`${m[1]} ${v > 0 ? "+" : ""}${v}`);
+    }
+    if (p.hp <= 0) { this.eliminate(client.sessionId, "药物反应"); return; }
+    this.sendNoticeTo(client.sessionId, applied.length ? `使用了${name}：${applied.join("，")}。` : `使用了${name}。没有什么发生。`);
+  }
+
+  /** 填空判定：dynamic 题与实际数值精确比对；静态题与正确选项文本比对（忽略大小写/空白） */
+  private isQuizCorrect(quiz: NonNullable<ReturnType<typeof parseEvent>["quiz"]>, answer: string, sceneId: string): boolean {
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "");
+    if (quiz.ruleType === "static") {
+      const expected = quiz.options[(quiz.staticAnswer ?? 1) - 1];
+      return norm(answer) === norm(expected ?? "");
+    }
+    const actual =
+      quiz.ruleType === "dynamic_visit" ? (this.visits.get(sceneId)?.size ?? 1)
+      : quiz.ruleType === "dynamic_alive" ? this.aliveIds().length
+      : quiz.ruleType === "dynamic_room" ? this.aliveIds().filter((x) => this.state.players.get(x)!.nodeId === sceneId).length
+      : this.todayViolationEvents; // dynamic_report
+    return Number(answer) === actual;
   }
 
   /** 超市：食物 5 币 / 剪刀 15 币（库存无限；理事长假装购买，币与库存都不动） */
@@ -561,7 +918,17 @@ export class GameRoom extends Room<GameState> {
     p.coins += v;
     p.junk = 0;
     p.junkValue = 0;
-    this.sendNoticeTo(client.sessionId, `${pick(NPC.recycleMan)}\n回收了杂物，+${v} 币。`);
+    // 回收站文本承诺：单次提交超过 5 件，随机 SAN -1~-20（本日累计捡拾数计）
+    let batchNote = "";
+    const batch = this.recycleBatch.get(client.sessionId) ?? 0;
+    if (batch > 5) {
+      const dmg = 1 + Math.floor(Math.random() * 20);
+      p.san = Math.max(0, p.san - dmg);
+      batchNote = ` 递得太多了，老板的眼睛在你脸上停了一秒。（SAN -${dmg}）`;
+      if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); return; }
+    }
+    this.recycleBatch.delete(client.sessionId);
+    this.sendNoticeTo(client.sessionId, `${pick(NPC.recycleMan)}\n回收了杂物，+${v} 币。${batchNote}`);
   }
 
   // ---------- M3：学生社区（预约制） ----------
@@ -610,7 +977,18 @@ export class GameRoom extends Room<GameState> {
   }
 
   private hasKey(id: string, key: string): boolean {
-    return this.state.players.get(id)?.keys.split(",").includes(key) ?? false;
+    if (this.state.players.get(id)?.keys.split(",").includes(key)) return true;
+    // M6：破旧的钥匙(关#1)可开社区四房间；万能钥匙(关#7)通吃
+    if (key.startsWith("key_")) {
+      return (this.state.players.get(id)?.pack.get("关#1") ?? 0) > 0 || (this.state.players.get(id)?.pack.get("关#7") ?? 0) > 0;
+    }
+    return (this.state.players.get(id)?.pack.get("关#7") ?? 0) > 0;
+  }
+
+  /** 行政楼门禁：干事需行政楼通行卡(关#3)或万能钥匙(关#7) */
+  private hasAdminPass(id: string): boolean {
+    const pack = this.state.players.get(id)?.pack;
+    return (pack?.get("关#3") ?? 0) > 0 || (pack?.get("关#7") ?? 0) > 0;
   }
 
   /** 办公室档案：调查 2 名存活学生是否同一阵营（强信息点，每日一份） */
@@ -836,10 +1214,16 @@ export class GameRoom extends Room<GameState> {
     else if (g === "scissors") p.scissors += 1;
     else if (g === "card") p.cards += 1;
     else if (g === "junk") { p.junk += 1; p.junkValue += 3; }
+    else if (g === "san20") { p.san = 25; } // 幻觉测试：压 SAN 到阈值下（留余量防回收惩罚击穿）
+    else if (g === "ap") { p.ap += 5; }
     else if (g.startsWith("key_")) {
       const ks = new Set(p.keys.split(",").filter(Boolean));
       ks.add(g);
       p.keys = [...ks].join(",");
+    }
+    else if (g.startsWith("pack:")) {
+      const ref = g.slice(5);
+      p.pack.set(ref, (p.pack.get(ref) ?? 0) + 1);
     }
     this.sendNoticeTo(client.sessionId, `[debug] 已获得 ${g}`);
   }
@@ -944,6 +1328,12 @@ export class GameRoom extends Room<GameState> {
   private eliminate(id: string, cause: string) {
     const p = this.state.players.get(id);
     if (!p || !p.alive) return;
+    if (this.sandbox) {
+      // 测试员不会出局：倒下即恢复，继续测试其他内容
+      p.hp = 50; p.san = 50; p.hunger = Math.max(p.hunger, 40);
+      this.sendNoticeTo(id, `测试模式：按规则你已因「${cause}」倒下，但测试员不会出局，状态已恢复。`);
+      return;
+    }
     p.alive = false;
     const faction = this.factionOf.get(id) === "chair" ? "理事长" : "干事";
     this.broadcast("notice", { text: `${p.name}（${faction}）因${cause}被淘汰。` });
@@ -983,6 +1373,81 @@ export class GameRoom extends Room<GameState> {
       reason,
       chairs: aliveChairs.map((id) => this.state.players.get(id)!.name),
       students: aliveStudents.map((id) => this.state.players.get(id)!.name),
+    });
+  }
+
+  // ---------- 沙盒（探索测试房） ----------
+
+  /** 测试员进房：发地图/规则板，默认干事身份，资金充裕 */
+  private joinSandbox(client: Client, options: JoinOptions) {
+    const id = client.sessionId;
+    if (this.state.players.has(id)) { // 断线重进：补发开局数据
+      this.state.players.get(id)!.connected = true;
+      client.send("init", this.sandboxInit());
+      client.send("role", { faction: this.factionOf.get(id) ?? "student", chairs: [] });
+      return;
+    }
+    const p = new Player();
+    p.name = String(options.name || "测试员").slice(0, 12);
+    p.gender = options.gender === "female" ? "female" : "male";
+    p.coins = 100;
+    this.state.players.set(id, p);
+    this.factionOf.set(id, "student");
+    this.recs.set(id, newDayRecord());
+    this.prevNode.set(id, p.nodeId);
+    client.send("init", this.sandboxInit());
+    client.send("role", { faction: "student", chairs: [] });
+    this.sendNoticeTo(id, "探索测试：自由走动，触发事件、答题、购物、回收。数值会自动回复，永不淘汰。");
+  }
+
+  private sandboxInit() {
+    return {
+      nodes: NODES,
+      edges: EDGES,
+      fixedRules: FIXED_RULES,
+      ruleBoard: this.board,
+      dayTotal: DAY_TOTAL,
+      lootMult: 1.5,
+    };
+  }
+
+  /** 切换干事/理事长视角：理事长的假交互也可测试 */
+  private onSandboxRole(client: Client) {
+    const id = client.sessionId;
+    if (!this.state.players.has(id)) return;
+    const next: Faction = this.factionOf.get(id) === "chair" ? "student" : "chair";
+    this.factionOf.set(id, next);
+    client.send("role", { faction: next, chairs: [] });
+    this.sendNoticeTo(id, next === "chair"
+      ? "已切换为理事长视角：交互均为假装交互——能看到房间信息，但不消耗、不获得、不占点位。"
+      : "已切换为干事视角：交互正常结算。此视角下请遵守校规，违规会被通报。");
+  }
+
+  /** 重置：先到先得点位、背包、违规记录全部清零，资金与状态回满 */
+  private onSandboxReset(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p) return;
+    this.claimed.clear();
+    this.visits.clear();
+    this.recycleBatch.clear();
+    this.roomUsed.clear();
+    this.todayViolationEvents = 0;
+    this.recs.set(client.sessionId, newDayRecord());
+    p.pack.clear();
+    p.items.clear();
+    p.keys = "";
+    p.food = 0; p.medicine = 0; p.scissors = 0; p.coffee = 0;
+    p.junk = 0; p.junkValue = 0; p.cards = 0;
+    p.coins = 100; p.hp = 100; p.san = 100; p.hunger = 100; p.ap = 10; p.alive = true;
+    this.sendNoticeTo(client.sessionId, "已重置：先到先得点位恢复可领，背包清空，资金与状态回满。");
+  }
+
+  /** 沙盒兜底：AP/饥饿/资金快见底时自动回补，保证测试不断流 */
+  private sandboxTopUp() {
+    this.state.players.forEach((p) => {
+      if (p.ap < 2) p.ap = 10;
+      if (p.hunger < 10) p.hunger = 60;
+      if (p.coins < 10) p.coins = 80;
     });
   }
 

@@ -27,11 +27,13 @@ export const NODES: MapNode[] = [
   { id: "gym",       name: "体育馆",     x: 28, y: 9,  type: "A", desc: "付费入场。器械区有几根没人认领的杠铃杆。" },
   { id: "admin",     name: "行政楼",    x: 69, y: 53, type: "A", desc: "影像室与网络中心都在这栋楼里。走廊上的监控，比教室里的多。" },
   { id: "gate",      name: "学校大门",   x: 45, y: 84, type: "B", desc: "校门一直开着。但至今，没有人走出去过。" },
+  { id: "woods",     name: "小树林",     x: 19, y: 38, type: "B", desc: "树比看上去的多。深处空地的那棵树，树皮缺了一块。" },
 ];
 
 // 连接关系（1 AP；沿校园道路）
 export const EDGES: Array<[string, string]> = [
-  ["dorm", "canteen"], ["dorm", "community"], ["dorm", "library"], ["dorm", "field"], ["dorm", "recycle"],
+  ["dorm", "canteen"], ["dorm", "community"], ["dorm", "library"], ["dorm", "field"], ["dorm", "recycle"], ["dorm", "woods"],
+  ["woods", "field"], ["woods", "canteen"],
   ["field", "gym"], ["field", "canteen"],
   ["recycle", "gym"], ["recycle", "community"],
   ["community", "canteen"], ["community", "tA"],

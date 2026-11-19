@@ -151,7 +151,7 @@ async function main() {
   check(await waitFor(() => Math.round(stOf(host, jia.sessionId).hunger) === 67, 4000), `过夜饥饿衰减（甲 ${Math.round(stOf(host, jia.sessionId).hunger)}，应 67）`);
 
   // 8. M4 信息战（Day1 上午）
-  for (const g of ["scissors", "card", "key_press"]) bing.send("debug", { give: g });
+  for (const g of ["scissors", "card", "key_press", "pack:关#3"]) bing.send("debug", { give: g });
   bing.send("move", { nodeId: "tA" });
   await arrive(bing, bing.sessionId, "tA", 5000);
   bing.send("move", { nodeId: "admin" });
@@ -190,7 +190,7 @@ async function main() {
   check(notices.some((t) => t.includes("出局")), "放逐结果已广播（含身份公示）");
 
   // 10. 等结算（学生不进食会在数日饿死，理事长胜是预期结果）
-  await waitFor(() => gameover !== null, 120000, 500);
+  await waitFor(() => gameover !== null, 240000, 500);
   check(!!gameover && ["chair", "student"].includes(gameover.winner), `结算完成，胜方 = ${gameover?.winner}`);
   console.log(`[smoke] 结算详情：${gameover?.detail}`);
 

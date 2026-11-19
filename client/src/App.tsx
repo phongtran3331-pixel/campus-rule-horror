@@ -1,10 +1,11 @@
 import { Component, useEffect, useReducer, useState, type ReactNode } from "react";
-import { colyseus, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleSwapMsg } from "./lib/client";
+import { colyseus, type AccuseStateMsg, type Faction, type GameOverMsg, type GameRoom, type RoleMsg, type RoomInit, type RuleMsg, type RuleSwapMsg } from "./lib/client";
 import type { Player } from "../../server/src/schema/GameState";
 import { PhaseBanner } from "./components/PhaseBanner";
 import { Terminal } from "./components/Terminal";
 import { IntroSequence } from "./components/IntroSequence";
 import { ExploreOverlay } from "./components/ExploreOverlay";
+import { SandboxScreen } from "./components/SandboxScreen";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -28,17 +29,70 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [debugRoom, setDebugRoom] = useState(false);
+  const [testRoom, setTestRoom] = useState<GameRoom | null>(null);
+  const [view, setView] = useState<"hub" | "lobby">("hub");
   const enter = (r: GameRoom, debug: boolean) => { setDebugRoom(debug); setRoom(r); };
+  const enterTest = async () => {
+    try { setTestRoom(await colyseus.create("test", { name: "测试员" })); }
+    catch (e) { console.error("探索测试进入失败", e); }
+  };
   return (
     <ErrorBoundary>
-      {room ? <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} /> : <Lobby onEnter={enter} />}
+      {testRoom ? (
+        <SandboxScreen room={testRoom} onLeave={() => setTestRoom(null)} />
+      ) : room ? (
+        <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} />
+      ) : view === "hub" ? (
+        <Hub onEnter={() => setView("lobby")} onTest={enterTest} />
+      ) : (
+        <Lobby onEnter={enter} onBack={() => setView("hub")} />
+      )}
     </ErrorBoundary>
+  );
+}
+
+// ---------- 主页（ATTO_page：各项目统一入口） ----------
+
+function Hub({ onEnter, onTest }: { onEnter: () => void; onTest: () => void }) {
+  return (
+    <div className="lobby">
+      <header className="lobby-head">
+        <span className="lobby-badge">ATTO_PAGE</span>
+        <h1 className="lobby-title">ATTO_page</h1>
+        <p className="lobby-sub">我的项目主页 —— <em>从这里出发</em></p>
+      </header>
+
+      <div className="hub-grid">
+        <button className="hub-card live" onClick={onEnter}>
+          <span className="hub-card-tag">联机游戏 · 可玩</span>
+          <h2>校园规则怪谈</h2>
+          <p>自管委在看着你 —— 多人联网规则怪谈生存。开房间，邀好友，遵守规则活到最后。</p>
+          <span className="hub-card-go">进入 ›</span>
+        </button>
+        <button className="hub-card live alt" onClick={onTest}>
+          <span className="hub-card-tag">单人 · 测试模式</span>
+          <h2>探索测试</h2>
+          <p>不进对局，自由走遍校园地图，触发所有场景事件、答题、购物与回收。</p>
+          <span className="hub-card-go">进入 ›</span>
+        </button>
+        <div className="hub-card soon">
+          <span className="hub-card-tag">筹备中</span>
+          <h2>2521 学习网站</h2>
+          <p>正在搬运中，敬请期待。</p>
+        </div>
+        <div className="hub-card soon">
+          <span className="hub-card-tag">虚位以待</span>
+          <h2>更多项目</h2>
+          <p>下一个想做什么？</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ---------- 大厅 ----------
 
-function Lobby({ onEnter }: { onEnter: (r: GameRoom, debug: boolean) => void }) {
+function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => void; onBack: () => void }) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"male" | "female">("male");
   const [code, setCode] = useState("");
@@ -65,6 +119,7 @@ function Lobby({ onEnter }: { onEnter: (r: GameRoom, debug: boolean) => void }) 
 
   return (
     <div className="lobby">
+      <button className="hub-back" onClick={onBack}>‹ ATTO_page 主页</button>
       <header className="lobby-head">
         <span className="lobby-badge">CAMPUS RULE HORROR</span>
         <h1 className="lobby-title">校园规则怪谈</h1>
@@ -122,12 +177,16 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
   const [introDone, setIntroDone] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [gameover, setGameover] = useState<GameOverMsg | null>(null);
+  const [accuse, setAccuse] = useState<AccuseStateMsg | null>(null);
+  const [rulePool, setRulePool] = useState<RuleMsg[]>([]);
 
   useEffect(() => {
     room.onStateChange(() => force());
     room.onMessage("init", (d: RoomInit) => setInit(d));
-    room.onMessage("role", (d: RoleMsg) => { setMyFaction(d.faction); setChairs(d.chairs); });
+    room.onMessage("role", (d: RoleMsg) => { setMyFaction(d.faction); setChairs(d.chairs); if (d.pool) setRulePool(d.pool); });
     room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
+    room.onMessage("rulePool", (d: { pool: RuleMsg[] }) => setRulePool(d.pool));
+    room.onMessage("accuseState", (d: AccuseStateMsg) => setAccuse(d));
     room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
     room.onMessage("dm", (m: { from: string; text: string; coins: number }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "dm", from: m.from, text: `${m.text}${m.coins > 0 ? `（附 ${m.coins} 币）` : ""}` }]));
@@ -165,11 +224,7 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
         />
       )}
       {gameover && (
-        <div className={`gameover ${gameover.winner}`}>
-          <h2>{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</h2>
-          <p>{gameover.detail}</p>
-          <p className="sub">{gameover.reason} · 理事长：{gameover.chairs.join("、") || "无"} · 存活干事：{gameover.students.join("、") || "无"}</p>
-        </div>
+        <GameOverPanel gameover={gameover} players={players} myId={room.sessionId} />
       )}
       <div className="main phone-main">
         <div className="phone-col">
@@ -204,6 +259,9 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
             onSendChat={(t) => room.send("chat", { text: t })}
             onOpenExplore={() => setExploreOpen(true)}
             init={init}
+            accuse={accuse}
+            rulePool={rulePool}
+            chairs={chairs}
             nodeName={init?.nodes.find((n) => n.id === me?.nodeId)?.name ?? ""}
           />
         </div>
@@ -221,6 +279,50 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
         />
       )}
       <button className="leave" onClick={onLeave}>离开</button>
+    </div>
+  );
+}
+
+
+/** 结算页：胜负公告 + 身份公示 + 全员归宿 */
+function GameOverPanel({ gameover, players, myId }: {
+  gameover: GameOverMsg;
+  players: Array<[string, Player]>;
+  myId: string;
+}) {
+  // 以名字对应身份（服务端按名字公示）
+  const nameSet = (names: string[]) => new Set(names);
+  const chairNames = nameSet(gameover.chairs);
+  const aliveStudentNames = nameSet(gameover.students);
+  const rows = players.map(([id, q]) => ({
+    id, name: q.name,
+    isChair: chairNames.has(q.name),
+    alive: q.alive,
+    survivedAsStudent: aliveStudentNames.has(q.name),
+    isMe: id === myId,
+  }));
+  return (
+    <div className={`gameover ${gameover.winner}`}>
+      <span className="go-badge">{gameover.winner === "chair" ? "理事长阵营大获全胜" : "干事阵营获胜"}</span>
+      <h2>{gameover.detail}</h2>
+      <p className="go-reason">{gameover.reason}</p>
+
+      <div className="go-table">
+        {rows.map((r) => (
+          <div key={r.id} className={`go-row${r.isChair ? " chair" : ""}${r.alive ? "" : " dead"}`}>
+            <span className="go-name">{r.name}{r.isMe ? "（你）" : ""}</span>
+            <span className="go-fate">
+              {r.isChair ? "理事长" : r.alive ? (r.survivedAsStudent ? "存活干事" : "干事") : "干事"}
+            </span>
+            <span className="go-status">{r.alive ? "在册" : "已出局"}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="go-sub">
+        理事长：{gameover.chairs.join("、") || "无"} ｜ 存活干事：{gameover.students.join("、") || "无"}
+      </p>
+      <button className="btn-primary" onClick={() => location.reload()}>返回 ATTO_page 主页</button>
     </div>
   );
 }

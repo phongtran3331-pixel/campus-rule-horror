@@ -9,3 +9,7 @@ __pycache__/
 
 # 本地 CI 复现目录
 .ci-repro/
+.git-proxy-target
+.git-proxy.mjs
+bot.js
+smoke-*.log

@@ -24,6 +24,7 @@ export class Player extends Schema {
   @type("number") cards = 0;       // 行政楼查阅卡（M4 影像室用）
   @type("string") keys = "";       // 社区房间钥匙，逗号分隔：key_office/key_dept/key_cce/key_press
   @type({ map: "number" }) items = new MapSchema<number>(); // 实体背包：物品目录 id → 数量
+  @type({ map: "number" }) pack = new MapSchema<number>();  // 场景文本背包：物品 ref「段#号」→ 数量
 }
 
 export class GameState extends Schema {
