@@ -3,7 +3,8 @@ import type { GameRoom } from "../lib/client";
 
 interface SceneJson {
   situations: Record<string, string>;
-  events: Record<string, { choice: string; result: string; result_taken?: string }>;
+  rooms?: Record<string, string>;
+  events: Record<string, { choice: string; result: string; result_taken?: string; room?: string; children?: string[] }>;
 }
 interface SceneResult {
   sceneId: string; eventId: string; taken: boolean; fake: boolean;
@@ -20,10 +21,11 @@ const wiredRooms = new WeakSet<object>();
 let lastResult: (SceneResult & { eventId: string }) | null = null;
 let lastQuiz: QuizMsg | null = null;
 
-/** 节点场景界面：situation 环视 + 事件选项 + 结果渲染（服务端只回编号与纯文本） */
+/** 节点场景界面：房间列表 → 房间事件 → 结果与子分支（服务端只回编号与纯文本） */
 export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: string; san: number }) {
   const [scene, setScene] = useState<SceneJson | null>(null);
   const [look, setLook] = useState<string>("");        // 环视文本
+  const [curRoom, setCurRoom] = useState<string | null>(null); // 当前查看的房间
   const [busy, setBusy] = useState<string | null>(null); // 进行中事件 id
   const [result, setResult] = useState<(SceneResult & { eventId: string }) | null>(null);
   const [quiz, setQuiz] = useState<QuizMsg | null>(null);
@@ -31,7 +33,7 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
 
   useEffect(() => {
     let dead = false;
-    setScene(null); setLook(""); setResult(null); setQuiz(null);
+    setScene(null); setLook(""); setResult(null); setQuiz(null); setCurRoom(null);
     fetch(`scenes/${nodeId}.json`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead) setScene(j); }).catch(() => {});
     return () => { dead = true; };
   }, [nodeId]);
@@ -57,6 +59,12 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
   if (!scene) return <p className="sv-empty">这里一片寂静。</p>;
   const situations = Object.entries(scene.situations);
   const events = Object.entries(scene.events);
+  const rooms = scene.rooms ?? {};
+  const roomNames = Object.keys(rooms);
+  // 被某个事件 children 引用过的事件 id（顶层与房间列表都不直接显示）
+  const childIds = new Set<string>();
+  for (const ev of Object.values(scene.events)) ev.children?.forEach((c) => childIds.add(c));
+  const topEvents = events.filter(([id]) => !childIds.has(id));
 
   const clickEvent = (eventId: string) => {
     if (busy) return;
@@ -71,13 +79,17 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
     room.send("sceneEvent", { sceneId: quiz.sceneId, eventId: quiz.eventId, answer: answer.trim() });
   };
 
+  // 结果下方长出的子分支（压一层）
+  const resultChildren = result ? (scene.events[result.eventId]?.children ?? [])
+    .map((c) => [c, scene.events[c]] as const).filter(([, ev]) => ev) : [];
+
   return (
     <div className="sv">
       {situations.length > 0 && (
         <div className="sv-look">
           <div className="sv-chips">
-            {situations.map(([k]) => (
-              <button key={k} className="sv-chip" onClick={() => setLook(strip(situations.find(([x]) => x === k)![1]))}>
+            {situations.map(([k, text]) => (
+              <button key={k} className="sv-chip" onClick={() => setLook(strip(text))}>
                 看看{k}
               </button>
             ))}
@@ -86,19 +98,55 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
         </div>
       )}
 
-      <div className="sv-events">
-        {events.map(([id, ev]) => (
-          <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
-            {strip(ev.choice)}
-          </button>
-        ))}
-        {/* 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」 */}
-        {/^t[A-C]$/.test(nodeId) && san <= 30 && (
-          <button className="sv-event illusion" disabled={busy !== null} onClick={() => clickEvent("__illusion")}>
-            走廊尽头多出一间 404 教室……
-          </button>
-        )}
-      </div>
+      {roomNames.length > 0 && (
+        <div className="sv-rooms">
+          {curRoom === null ? (
+            <>
+              {roomNames.map((name) => (
+                <button key={name} className="sv-room" disabled={busy !== null} onClick={() => { setCurRoom(name); setResult(null); setLook(""); }}>
+                  {name}
+                </button>
+              ))}
+              {/* 无房间归属的事件直接平铺（兼容旧内容） */}
+              {topEvents.filter(([, ev]) => !ev.room).map(([id, ev]) => (
+                <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
+                  {strip(ev.choice)}
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              <button className="sv-back" disabled={busy !== null} onClick={() => { setCurRoom(null); setResult(null); }}>
+                ← 回到{nodeName(nodeId)}
+              </button>
+              <p className="sv-room-desc">{rooms[curRoom]}</p>
+              <div className="sv-events">
+                {topEvents.filter(([, ev]) => ev.room === curRoom).map(([id, ev]) => (
+                  <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
+                    {strip(ev.choice)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {roomNames.length === 0 && (
+        <div className="sv-events">
+          {topEvents.map(([id, ev]) => (
+            <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
+              {strip(ev.choice)}
+            </button>
+          ))}
+          {/* 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」 */}
+          {/^t[A-C]$/.test(nodeId) && san <= 30 && (
+            <button className="sv-event illusion" disabled={busy !== null} onClick={() => clickEvent("__illusion")}>
+              走廊尽头多出一间 404 教室……
+            </button>
+          )}
+        </div>
+      )}
 
       {quiz && (
         <div className="sv-quiz">
@@ -125,11 +173,30 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
           {result.op && !result.fake && (
             <OpPanel room={room} sceneId={nodeId} op={result.op} />
           )}
+
+          {/* 结果下方长出子分支（进入该事件后续可做的事） */}
+          {resultChildren.length > 0 && (
+            <div className="sv-events sv-children">
+              {resultChildren.map(([cid, ev]) => (
+                <button key={cid} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(cid)}>
+                  {strip(ev.choice)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
+
+const NODE_CN: Record<string, string> = {
+  gate: "校门", tA: "教学楼A", tB: "教学楼B", tC: "教学楼C", gym: "体育馆",
+  library: "图书馆", woods: "小树林", community: "学生社区", canteen: "食堂",
+  market: "超市", recycle: "回收站", clinic: "校医院", dorm: "宿舍", field: "操场",
+  admin: "行政楼",
+};
+const nodeName = (id: string) => NODE_CN[id] ?? id;
 
 /** {操作} 控件面板：按关键词分发到既有消息通道 */
 function OpPanel({ room, sceneId, op }: { room: GameRoom; sceneId: string; op: string }) {

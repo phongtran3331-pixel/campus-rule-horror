@@ -513,3 +513,13 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 
 /* 单人试玩 */
 .solo-chip { text-align: center; font-size: 12px; letter-spacing: 2px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin-bottom: 8px; }
+
+/* 场景房间树：房间列表 / 房间描述 / 返回 / 子分支 */
+.sv-rooms { display: flex; flex-direction: column; gap: 6px; }
+.sv-room { text-align: left; background: #141c28; border: 1px solid var(--line); border-left: 3px solid #3a5a44; color: #d5e5da; padding: 10px 12px; border-radius: 8px; font-size: 14px; line-height: 1.6; }
+.sv-room:hover:not(:disabled) { border-left-color: #4caf7d; background: #16222e; }
+.sv-room:disabled { opacity: 0.45; }
+.sv-room-desc { margin: 2px 0 8px; line-height: 1.9; font-size: 13px; color: #93a8b8; border-left: 2px solid #24405a; padding-left: 10px; }
+.sv-back { align-self: flex-start; background: none; border: none; color: #6f8ba3; font-size: 12.5px; padding: 2px 0; }
+.sv-back:hover:not(:disabled) { color: #b8d4e8; }
+.sv-children { margin-top: 10px; border-top: 1px dashed #24405a; padding-top: 10px; }
