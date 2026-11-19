@@ -523,3 +523,25 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .sv-back { align-self: flex-start; background: none; border: none; color: #6f8ba3; font-size: 12.5px; padding: 2px 0; }
 .sv-back:hover:not(:disabled) { color: #b8d4e8; }
 .sv-children { margin-top: 10px; border-top: 1px dashed #24405a; padding-top: 10px; }
+
+/* 文游式全屏场景：上方叙事文本，中间选项 */
+.eo-body-full { grid-template-columns: 1fr; }
+.eo-node-full { width: 100%; max-width: 680px; margin: 0 auto; height: 100%; overflow-y: auto; gap: 8px; }
+.sv2 { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 180px; }
+.sv2-text { min-height: 96px; background: linear-gradient(180deg, rgba(16,24,35,.55), rgba(10,15,22,.25)); border-radius: 10px; padding: 12px 4px 4px; }
+.sv2-text.taken .sv2-main { color: #b9b2a4; }
+.sv2-main { margin: 0; line-height: 2.05; font-size: 15.5px; color: #d8e2ea; letter-spacing: .3px; white-space: pre-wrap; cursor: default; }
+.sv2-caret { color: var(--teal); animation: svfade 1s infinite; }
+.sv2-grants { color: #7fd7a8; font-size: 13px; margin: 8px 0 0; }
+.sv2-states { color: #8fb6d9; font-size: 13px; margin: 4px 0 0; }
+.sv2-fake { color: #8a7f9e; font-size: 13px; margin: 8px 0 0; font-style: italic; }
+.sv2-dots { color: #4a5a6e; letter-spacing: 6px; text-align: center; margin: 12px 0; animation: svfade 1.2s infinite; }
+.sv2-opts { display: flex; flex-direction: column; gap: 8px; }
+.sv2-opt { text-align: center; background: rgba(18,28,40,.85); border: 1px solid #223648; color: #cfe0ea; padding: 11px 14px; border-radius: 9px; font-size: 14.5px; letter-spacing: 1px; transition: background .15s, border-color .15s; animation: fade-up .25s ease both; }
+.sv2-opt:hover:not(:disabled) { background: #16283a; border-color: var(--teal); color: #eaf6fb; }
+.sv2-opt:disabled { opacity: .4; }
+.sv2-opt.dim { background: none; border-color: transparent; color: #64788c; font-size: 13px; padding: 6px 14px; }
+.sv2-opt.dim:hover:not(:disabled) { color: #9fb6c8; border-color: transparent; background: rgba(255,255,255,.03); }
+.sv2-quiz { background: #141018; border: 1px solid #3a2f4a; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; animation: fade-up .25s ease both; }
+.sv2-quiz-q { color: #e8ddf5; font-size: 15px; line-height: 1.7; margin: 0; }
+.sv2-quiz-rule { color: #a08fb8; font-size: 12.5px; margin: 0; }

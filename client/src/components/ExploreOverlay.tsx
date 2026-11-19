@@ -72,48 +72,51 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
         {closable && <button className="eo-close" onClick={onClose}>收起地图 ✕</button>}
       </div>
 
-      <div className="eo-body">
-        <div className="eo-map">
-          <MapView
-            nodes={nodes}
-            edges={edges}
-            meNodeId={me.nodeId}
-            netDown={netDown}
-            selectedId={view ?? selected}
-            onSelect={(id) => { setView(null); setSelected(id); }}
-          />
-        </div>
-
-        <div className="eo-side">
-          {view === null ? (
-            <div className="eo-card">
-              <h3 className="eo-name">{node.name}</h3>
-              <p className="eo-type">{node.type === "A" ? "建筑（内有房间）" : "开放区域"}</p>
-              <p className="eo-desc">{node.desc}</p>
-              {selected === me.nodeId ? (
-                <Btn label={`进入${node.name}`} onClick={() => setView(selected)} />
-              ) : (
-                <>
-                  <Btn
-                    label={`前往 · ${cost} AP`}
-                    disabled={!isChair && me.ap < cost}
-                    onClick={() => send("move", { nodeId: selected })}
-                  />
-                  {!isChair && me.ap < cost && <p className="eo-warn">行动值不足</p>}
-                </>
-              )}
+      <div className={`eo-body${view !== null ? " eo-body-full" : ""}`}>
+        {view === null && (
+          <>
+            <div className="eo-map">
+              <MapView
+                nodes={nodes}
+                edges={edges}
+                meNodeId={me.nodeId}
+                netDown={netDown}
+                selectedId={selected}
+                onSelect={(id) => { setView(null); setSelected(id); }}
+              />
             </div>
-          ) : (
-            <NodeView
-              room={room}
-              node={node}
-              me={me}
-              phase={phase}
-              netDown={netDown}
-              onBack={() => setView(null)}
-            />
-          )}
-        </div>
+
+            <div className="eo-side">
+              <div className="eo-card">
+                <h3 className="eo-name">{node.name}</h3>
+                <p className="eo-type">{node.type === "A" ? "建筑（内有房间）" : "开放区域"}</p>
+                <p className="eo-desc">{node.desc}</p>
+                {selected === me.nodeId ? (
+                  <Btn label={`进入${node.name}`} onClick={() => setView(selected)} />
+                ) : (
+                  <>
+                    <Btn
+                      label={`前往 · ${cost} AP`}
+                      disabled={!isChair && me.ap < cost}
+                      onClick={() => send("move", { nodeId: selected })}
+                    />
+                    {!isChair && me.ap < cost && <p className="eo-warn">行动值不足</p>}
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+        {view !== null && (
+          <NodeView
+            room={room}
+            node={node}
+            me={me}
+            phase={phase}
+            netDown={netDown}
+            onBack={() => setView(null)}
+          />
+        )}
       </div>
     </div>
   );
@@ -132,7 +135,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
   const [imgOk, setImgOk] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
   return (
-    <div className="eo-card eo-node">
+    <div className="eo-card eo-node eo-node-full">
       <div className="eo-node-head">
         <button className="t-back" onClick={onBack}>‹</button>
         <h3 className="eo-name">{node.name}</h3>
@@ -151,9 +154,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
         )}
       </div>
 
-      <p className="eo-desc">{node.desc}</p>
-
-      {/* M6：真实场景文本（环视 + 事件 + 结算） */}
+      {/* 文游式全屏场景：上方叙事文本，中间选项，底部系统行动 */}
       <SceneView room={room} nodeId={at} san={me.san} />
 
       <div className="row wrap eo-actions">

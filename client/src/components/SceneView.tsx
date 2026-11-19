@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameRoom } from "../lib/client";
 
+interface SceneEv { choice: string; result: string; result_taken?: string; room?: string; children?: string[] }
 interface SceneJson {
   situations: Record<string, string>;
   rooms?: Record<string, string>;
-  events: Record<string, { choice: string; result: string; result_taken?: string; room?: string; children?: string[] }>;
+  intro?: string;
+  events: Record<string, SceneEv>;
 }
 interface SceneResult {
   sceneId: string; eventId: string; taken: boolean; fake: boolean;
@@ -14,6 +16,8 @@ interface SceneResult {
 }
 interface QuizMsg { sceneId: string; eventId: string; question: string; numeric: boolean; rule: string }
 
+interface TextBlock { main: string; grants?: string[]; states?: string[]; fake?: boolean; taken?: boolean }
+
 const strip = (s: string) => s.replace(/\{[^}]*\}/g, "").trim();
 const STATE_CN: Record<string, string> = { ap: "行动值", hunger: "饥饿值", hp: "健康值", san: "精神值" };
 // 每房间只注册一次消息监听（避免 StrictMode 双挂载与切节点残留）
@@ -21,19 +25,24 @@ const wiredRooms = new WeakSet<object>();
 let lastResult: (SceneResult & { eventId: string }) | null = null;
 let lastQuiz: QuizMsg | null = null;
 
-/** 节点场景界面：房间列表 → 房间事件 → 结果与子分支（服务端只回编号与纯文本） */
+type Screen = { k: "hub" } | { k: "room"; id: string } | { k: "result" };
+
+/**
+ * 全屏场景界面（文游式）：
+ * 上方叙事文本，中间当前可选行动；点选后选项消失，结果文本浮现，再长出新的选项。
+ * 屏幕状态机：hub（房间列表/平铺）→ room（房间内）→ result（事件结果+子分支）。
+ */
 export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: string; san: number }) {
   const [scene, setScene] = useState<SceneJson | null>(null);
-  const [look, setLook] = useState<string>("");        // 环视文本
-  const [curRoom, setCurRoom] = useState<string | null>(null); // 当前查看的房间
-  const [busy, setBusy] = useState<string | null>(null); // 进行中事件 id
+  const [screen, setScreen] = useState<Screen>({ k: "hub" });
+  const [text, setText] = useState<TextBlock | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<(SceneResult & { eventId: string }) | null>(null);
   const [quiz, setQuiz] = useState<QuizMsg | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let dead = false;
-    setScene(null); setLook(""); setResult(null); setQuiz(null); setCurRoom(null);
+    setScene(null); setScreen({ k: "hub" }); setText(null); setResult(null); setQuiz(null); setBusy(null);
     fetch(`scenes/${nodeId}.json`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead) setScene(j); }).catch(() => {});
     return () => { dead = true; };
   }, [nodeId]);
@@ -48,169 +57,177 @@ export function SceneView({ room, nodeId, san }: { room: GameRoom; nodeId: strin
   // 轮询式消费消息（房间级单监听，组件挂载后每 300ms 同步一次）
   useEffect(() => {
     const t = setInterval(() => {
-      if (lastResult) { setResult(lastResult); lastResult = null; setQuiz(null); setBusy(null); }
+      if (lastResult) {
+        const r = lastResult; lastResult = null;
+        setResult(r); setQuiz(null); setBusy(null);
+        setScreen({ k: "result" });
+        setText({
+          main: r.text,
+          grants: r.grants.length ? r.grants.map((g) => g.name) : undefined,
+          states: Object.keys(r.states).length
+            ? Object.entries(r.states).map(([k, v]) => `${STATE_CN[k]} ${v > 0 ? "+" : ""}${v}`)
+            : undefined,
+          fake: r.fake || undefined,
+          taken: r.taken || undefined,
+        });
+      }
       if (lastQuiz) { setQuiz(lastQuiz); lastQuiz = null; setBusy(null); }
     }, 300);
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => { resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [result]);
+  // 场景载入后写入入口文本
+  useEffect(() => {
+    if (!scene) return;
+    setText({ main: scene.intro ?? Object.values(scene.situations)[0] ?? "" });
+  }, [scene]);
 
   if (!scene) return <p className="sv-empty">这里一片寂静。</p>;
-  const situations = Object.entries(scene.situations);
-  const events = Object.entries(scene.events);
+
   const rooms = scene.rooms ?? {};
   const roomNames = Object.keys(rooms);
-  // 被某个事件 children 引用过的事件 id（顶层与房间列表都不直接显示）
+  const hasRooms = roomNames.length > 0;
+  // 被 children 引用的事件不直接出现在任何列表
   const childIds = new Set<string>();
   for (const ev of Object.values(scene.events)) ev.children?.forEach((c) => childIds.add(c));
-  const topEvents = events.filter(([id]) => !childIds.has(id));
+  const topIds = Object.keys(scene.events).filter((id) => !childIds.has(id));
 
   const clickEvent = (eventId: string) => {
     if (busy) return;
     setBusy(eventId);
-    setResult(null);
+    setQuiz(null);
     room.send("sceneEvent", { sceneId: nodeId, eventId });
   };
   const answerQuiz = (answer: string) => {
     if (!quiz || !answer.trim()) return;
     setBusy(quiz.eventId);
+    const q = quiz;
     setQuiz(null);
-    room.send("sceneEvent", { sceneId: quiz.sceneId, eventId: quiz.eventId, answer: answer.trim() });
+    room.send("sceneEvent", { sceneId: q.sceneId, eventId: q.eventId, answer: answer.trim() });
+  };
+  const goRoom = (id: string) => {
+    setScreen({ k: "room", id });
+    setText({ main: rooms[id] });
+    setResult(null); setQuiz(null);
+  };
+  const goHub = () => {
+    setScreen({ k: "hub" });
+    setText({ main: scene.intro ?? Object.values(scene.situations)[0] ?? "" });
+    setResult(null); setQuiz(null);
   };
 
-  // 结果下方长出的子分支（压一层）
-  const resultChildren = result ? (scene.events[result.eventId]?.children ?? [])
-    .map((c) => [c, scene.events[c]] as const).filter(([, ev]) => ev) : [];
+  // —— 组装当前屏幕的选项 ——
+  type Opt = { key: string; label: string; run: () => void; dim?: boolean };
+  const opts: Opt[] = [];
+  if (!busy && !quiz) {
+    if (screen.k === "hub") {
+      if (hasRooms) {
+        for (const name of roomNames) opts.push({ key: `r:${name}`, label: `走进${name}`, run: () => goRoom(name) });
+        for (const id of topIds) {
+          const ev = scene.events[id];
+          if (!ev.room) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id) });
+        }
+        // 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」
+        if (/^t[A-C]$/.test(nodeId) && san <= 30) {
+          opts.push({ key: "illusion", label: "走廊尽头多出一间 404 教室……", run: () => clickEvent("__illusion"), dim: true });
+        }
+      } else {
+        for (const id of topIds) opts.push({ key: `e:${id}`, label: strip(scene.events[id].choice), run: () => clickEvent(id) });
+      }
+    } else if (screen.k === "room") {
+      for (const id of topIds) {
+        const ev = scene.events[id];
+        if (ev.room === screen.id) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id) });
+      }
+      opts.push({ key: "back-hub", label: "退出来", run: goHub, dim: true });
+    } else {
+      // result 屏幕：子分支 + 操作控件 + 归位选项
+      const ev = result ? scene.events[result.eventId] : null;
+      if (result && ev?.children) {
+        for (const c of ev.children) {
+          const ce = scene.events[c];
+          if (ce) opts.push({ key: `c:${c}`, label: strip(ce.choice), run: () => clickEvent(c) });
+        }
+      }
+      if (result?.op && !result.fake) {
+        for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run });
+      }
+      const roomOf = result ? scene.events[result.eventId]?.room : undefined;
+      if (roomOf) opts.push({ key: "back-room", label: `留在${roomOf}`, run: () => goRoom(roomOf), dim: true });
+      opts.push({ key: "back-hub2", label: hasRooms ? "去别的房间" : "继续", run: goHub, dim: true });
+    }
+  }
 
   return (
-    <div className="sv">
-      {situations.length > 0 && (
-        <div className="sv-look">
-          <div className="sv-chips">
-            {situations.map(([k, text]) => (
-              <button key={k} className="sv-chip" onClick={() => setLook(strip(text))}>
-                看看{k}
+    <div className="sv2">
+      <div className={`sv2-text${text?.taken ? " taken" : ""}`}>
+        {text ? (
+          <>
+            <TypeText text={text.main} />
+            {text.grants && <p className="sv2-grants">获得：{text.grants.join("、")}</p>}
+            {text.states && <p className="sv2-states">{text.states.join("，")}</p>}
+            {text.fake && <p className="sv2-fake">（你记住了这里的一切。它不会少，你也不会多。）</p>}
+          </>
+        ) : (
+          busy && <p className="sv2-dots">……</p>
+        )}
+      </div>
+
+      <div className="sv2-opts">
+        {quiz ? (
+          <div className="sv2-quiz">
+            <p className="sv2-quiz-q">{quiz.question}</p>
+            <QuizFill numeric={quiz.numeric} onSubmit={answerQuiz} />
+            <p className="sv2-quiz-rule">判定：{quiz.rule}</p>
+          </div>
+        ) : (
+          <>
+            {opts.map((o) => (
+              <button key={o.key} className={`sv2-opt${o.dim ? " dim" : ""}`} disabled={busy !== null} onClick={o.run}>
+                {o.label}
               </button>
             ))}
-          </div>
-          {look && <p className="sv-look-text">{look}</p>}
-        </div>
-      )}
-
-      {roomNames.length > 0 && (
-        <div className="sv-rooms">
-          {curRoom === null ? (
-            <>
-              {roomNames.map((name) => (
-                <button key={name} className="sv-room" disabled={busy !== null} onClick={() => { setCurRoom(name); setResult(null); setLook(""); }}>
-                  {name}
-                </button>
-              ))}
-              {/* 无房间归属的事件直接平铺（兼容旧内容） */}
-              {topEvents.filter(([, ev]) => !ev.room).map(([id, ev]) => (
-                <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
-                  {strip(ev.choice)}
-                </button>
-              ))}
-            </>
-          ) : (
-            <>
-              <button className="sv-back" disabled={busy !== null} onClick={() => { setCurRoom(null); setResult(null); }}>
-                ← 回到{nodeName(nodeId)}
-              </button>
-              <p className="sv-room-desc">{rooms[curRoom]}</p>
-              <div className="sv-events">
-                {topEvents.filter(([, ev]) => ev.room === curRoom).map(([id, ev]) => (
-                  <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
-                    {strip(ev.choice)}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {roomNames.length === 0 && (
-        <div className="sv-events">
-          {topEvents.map(([id, ev]) => (
-            <button key={id} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(id)}>
-              {strip(ev.choice)}
-            </button>
-          ))}
-          {/* 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」 */}
-          {/^t[A-C]$/.test(nodeId) && san <= 30 && (
-            <button className="sv-event illusion" disabled={busy !== null} onClick={() => clickEvent("__illusion")}>
-              走廊尽头多出一间 404 教室……
-            </button>
-          )}
-        </div>
-      )}
-
-      {quiz && (
-        <div className="sv-quiz">
-          <p className="sv-quiz-q">{quiz.question}</p>
-          <QuizFill numeric={quiz.numeric} onSubmit={answerQuiz} />
-          <p className="sv-quiz-rule">{quiz.rule}</p>
-        </div>
-      )}
-
-      {result && (
-        <div ref={resultRef} className={`sv-result${result.taken ? " taken" : ""}`}>
-          <p className="sv-result-text">{result.text}</p>
-          {result.grants.length > 0 && (
-            <p className="sv-grants">获得：{result.grants.map((g) => g.name).join("、")}</p>
-          )}
-          {Object.keys(result.states).length > 0 && (
-            <p className="sv-states">
-              {Object.entries(result.states).map(([k, v]) => `${STATE_CN[k]} ${v > 0 ? "+" : ""}${v}`).join("，")}
-            </p>
-          )}
-          {result.fake && <p className="sv-fake">（你记住了这里的一切。它不会少，你也不会多。）</p>}
-
-          {/* {操作} 事件长出真实控件：货表 / 回收选物 / 功能入口 */}
-          {result.op && !result.fake && (
-            <OpPanel room={room} sceneId={nodeId} op={result.op} />
-          )}
-
-          {/* 结果下方长出子分支（进入该事件后续可做的事） */}
-          {resultChildren.length > 0 && (
-            <div className="sv-events sv-children">
-              {resultChildren.map(([cid, ev]) => (
-                <button key={cid} className="sv-event" disabled={busy !== null} onClick={() => clickEvent(cid)}>
-                  {strip(ev.choice)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+            {busy && !text && <p className="sv2-dots">……</p>}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-const NODE_CN: Record<string, string> = {
-  gate: "校门", tA: "教学楼A", tB: "教学楼B", tC: "教学楼C", gym: "体育馆",
-  library: "图书馆", woods: "小树林", community: "学生社区", canteen: "食堂",
-  market: "超市", recycle: "回收站", clinic: "校医院", dorm: "宿舍", field: "操场",
-  admin: "行政楼",
-};
-const nodeName = (id: string) => NODE_CN[id] ?? id;
+/** 打字机文本：逐字浮现，点击一次立即显示全文 */
+function TypeText({ text }: { text: string }) {
+  const [n, setN] = useState(0);
+  const full = useRef(false);
+  useEffect(() => { setN(0); full.current = false; }, [text]);
+  useEffect(() => {
+    if (n >= text.length) return;
+    const t = setTimeout(() => setN((v) => Math.min(v + 2, text.length)), 18);
+    return () => clearTimeout(t);
+  }, [n, text]);
+  const done = n >= text.length;
+  return (
+    <p
+      className="sv2-main"
+      onClick={() => { if (!done) { setN(text.length); full.current = true; } }}
+    >
+      {text.slice(0, n)}
+      {!done && <span className="sv2-caret">▌</span>}
+    </p>
+  );
+}
 
-/** {操作} 控件面板：按关键词分发到既有消息通道 */
-function OpPanel({ room, sceneId, op }: { room: GameRoom; sceneId: string; op: string }) {
+/** {操作} 解析为选项动作（与旧 OpPanel 同一套消息通道） */
+function opActions(room: GameRoom, sceneId: string, op: string): Array<{ label: string; run: () => void }> {
   const send = (type: string, msg?: unknown) => room.send(type, msg);
-  const buyMatch = op.match(/购买——(.+)/);
-  const shopItems = buyMatch
-    ? buyMatch[1].split("/").map((s) => s.trim()).map((s) => {
-        const m = s.match(/^(.+?)(\d+)$/);
-        return m ? { name: m[1], price: Number(m[2]) } : null;
-      }).filter(Boolean) as Array<{ name: string; price: number }>
-    : [];
-
-  // 已知功能映射：点击事件文本即触发对应系统
   const actions: Array<{ label: string; run: () => void }> = [];
+  const buyMatch = op.match(/购买——(.+)/);
+  if (buyMatch) {
+    for (const s of buyMatch[1].split("/")) {
+      const m = s.trim().match(/^(.+?)(\d+)$/);
+      if (m) actions.push({ label: `${m[1].trim()} · ${m[2]}币`, run: () => send("sceneBuy", { sceneId, name: m[1].trim() }) });
+    }
+  }
   if (op.includes("回收") && op.includes("背包")) actions.push({ label: "打开背包选择回收物", run: () => send("packRecycle", { refs: promptRefs("输入要回收的物品编号（段#号，逗号分隔，如 普#5,普#6）") }) });
   if (op.includes("社区预约")) actions.push({ label: "预约上午段", run: () => send("bookSlot", { slot: "am" }) });
   if (op.includes("社区预约")) actions.push({ label: "预约下午段", run: () => send("bookSlot", { slot: "pm" }) });
@@ -241,24 +258,7 @@ function OpPanel({ room, sceneId, op }: { room: GameRoom; sceneId: string; op: s
   if (op.includes("剪断网线")) actions.push({ label: "剪断网线", run: () => send("cutNet") });
   if (op.includes("修复网线")) actions.push({ label: "修复网线", run: () => send("repairNet") });
   if (op.includes("处理伤口")) actions.push({ label: "处理伤口", run: () => send("buyMedicine") });
-
-  if (!shopItems.length && !actions.length) return null;
-  return (
-    <div className="sv-op">
-      {shopItems.length > 0 && (
-        <div className="sv-op-shop">
-          {shopItems.map((it) => (
-            <button key={it.name} className="sv-op-btn" onClick={() => send("sceneBuy", { sceneId, name: it.name })}>
-              {it.name} · {it.price}币
-            </button>
-          ))}
-        </div>
-      )}
-      {actions.map((a) => (
-        <button key={a.label} className="sv-op-btn" onClick={a.run}>{a.label}</button>
-      ))}
-    </div>
-  );
+  return actions;
 }
 
 function promptRefs(hint: string): string[] {
