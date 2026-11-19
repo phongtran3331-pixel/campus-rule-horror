@@ -22,6 +22,8 @@ export interface JoinOptions {
   gender?: string;
   timeScale?: number;
   debug?: boolean; // 调试房：房主可无视人数直接开局
+  solo?: boolean;        // 单人试玩：跳过匹配直接开局，空位由挂机玩家补齐
+  soloFaction?: "student" | "chair"; // 单人试玩自选身份
 }
 
 const DAY_TOTAL = 4; // 0..4，Day4 中午终投后直接结算
@@ -37,6 +39,7 @@ export class GameRoom extends Room<GameState> {
   private timer!: PhaseTimer;
   private timeScale = 1;
   private debugMode = false; // 调试房：房主可直接开局
+  private soloFaction: Faction | null = null; // 单人试玩身份（null = 正常对局）
 
   // ---------- 服务端私有数据（规则引擎状态，均不同步） ----------
   private factionOf = new Map<string, Faction>();          // 阵营（机密）
@@ -67,14 +70,15 @@ export class GameRoom extends Room<GameState> {
   private claimed = new Set<string>();                     // 先到先得："sceneId:eventId"（全局一次性）
   private visits = new Map<string, Set<string>>();           // dynamic_visit：本日各节点到访去重集合
   private recycleBatch = new Map<string, number>();          // 回收站：本日累计捡拾件数（每日重置）
-  // 沙盒（探索测试房，TestRoom 置 true）：无对局流程，永不淘汰，数值自动回补
-  protected sandbox = false;
-  private sandboxTimer?: NodeJS.Timeout;
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
     this.timeScale = options.timeScale ?? 1;
     this.debugMode = !!options.debug;
+    if (options.solo && (options.soloFaction === "chair" || options.soloFaction === "student")) {
+      this.soloFaction = options.soloFaction;
+      this.debugMode = true; // 单人必为调试房：允许直接开局
+    }
     this.timer = new PhaseTimer(this.timeScale);
 
     this.onMessage("start", (client) => this.startGame(client));
@@ -123,23 +127,9 @@ export class GameRoom extends Room<GameState> {
     if (this.timeScale > 1) {
       this.onMessage("debug", (client, msg: { give?: string }) => this.onDebug(client, msg));
     }
-    // 沙盒测试房：抽好规则板即开放全图探索，不启动对局计时
-    if (this.sandbox) {
-      const drawn = drawRuleBoard();
-      this.board = drawn.board;
-      this.pool = drawn.pool;
-      this.state.day = 0;
-      this.state.phase = "morning";
-      this.state.phaseStartedAt = Date.now();
-      this.onMessage("sandboxRole", (client) => this.onSandboxRole(client));
-      this.onMessage("sandboxReset", (client) => this.onSandboxReset(client));
-      this.sandboxTimer = setInterval(() => this.sandboxTopUp(), 2000);
-    }
   }
 
   onJoin(client: Client, options: JoinOptions) {
-    // 沙盒测试房：单人自由进出，随到随探
-    if (this.sandbox) { this.joinSandbox(client, options); return; }
     // 对局进行中：仅允许重连（sessionId 已有角色）；新来访者直接请出
     if (this.state.phase !== "lobby") {
       if (!this.state.players.has(client.sessionId)) {
@@ -161,12 +151,6 @@ export class GameRoom extends Room<GameState> {
   }
 
   onLeave(client: Client, consented?: boolean) {
-    if (this.sandbox) {
-      this.state.players.delete(client.sessionId);
-      this.factionOf.delete(client.sessionId);
-      this.recs.delete(client.sessionId);
-      return;
-    }
     const p = this.state.players.get(client.sessionId);
     if (this.state.phase === "lobby") {
       this.state.players.delete(client.sessionId);
@@ -194,7 +178,6 @@ export class GameRoom extends Room<GameState> {
   onDispose() {
     this.timer.stop();
     if (this.netTimer) clearTimeout(this.netTimer);
-    if (this.sandboxTimer) clearInterval(this.sandboxTimer);
   }
 
   // ---------- 开局 ----------
@@ -202,12 +185,34 @@ export class GameRoom extends Room<GameState> {
   private startGame(client: Client) {
     if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
     const ids = [...this.state.players.keys()];
-    if (ids.length < 5 && !this.debugMode) return;
+    const soloMode = this.soloFaction !== null; // 单人试玩：其余座位由挂机玩家补齐
+    if (ids.length < 5 && !this.debugMode && !soloMode) return;
 
-    // 阵营分配：≥9 人 3 理事长，5–8 人 2 理事长（7:3 体验局见沙盘推演报告附 3）
-    const nChair = ids.length >= 9 ? 3 : 2;
-    const shuffled = [...ids].sort(() => Math.random() - 0.5);
-    shuffled.forEach((id, i) => this.factionOf.set(id, i < nChair ? "chair" : "student"));
+    if (soloMode) {
+      // 补齐 9 人局：真人按选择定身份，8 个挂机玩家占满其余座位
+      const want = this.soloFaction === "chair" ? "chair" : "student";
+      this.factionOf.set(client.sessionId, want);
+      const BOT_NAMES = ["周棋", "何霜", "方勉", "许昼", "韩杳", "冯遥", "邓灯", "曾隅"];
+      for (let i = 0; i < 8; i++) {
+        const bot = new Player();
+        bot.name = BOT_NAMES[i];
+        bot.gender = i % 2 === 0 ? "male" : "female";
+        bot.connected = false; // 全员列表中显示为离线（挂机）
+        this.state.players.set(`bot-${i + 1}`, bot);
+        ids.push(`bot-${i + 1}`);
+      }
+      // 3 个理事长席位：真人占一席则其余两席在挂机玩家里随机
+      const chairSeats = 3;
+      const pool = ids.filter((id) => this.factionOf.get(id) == null);
+      const shuffledBots = pool.sort(() => Math.random() - 0.5);
+      const needChairs = chairSeats - (want === "chair" ? 1 : 0);
+      shuffledBots.forEach((id, i) => this.factionOf.set(id, i < needChairs ? "chair" : "student"));
+    } else {
+      // 阵营分配：≥9 人 3 理事长，5–8 人 2 理事长（7:3 体验局见沙盘推演报告附 3）
+      const nChair = ids.length >= 9 ? 3 : 2;
+      const shuffled = [...ids].sort(() => Math.random() - 0.5);
+      shuffled.forEach((id, i) => this.factionOf.set(id, i < nChair ? "chair" : "student"));
+    }
 
     const { board, pool } = drawRuleBoard();
     this.board = board;
@@ -612,8 +617,7 @@ export class GameRoom extends Room<GameState> {
     if (process.env.SMOKE_DEBUG) console.log(`[scene] ${id} ${sceneId}/${eventId} node=${p?.nodeId} phase=${this.state.phase} ev=${!!ev} alive=${p?.alive}`);
     if (!p || !p.alive) return;
     if (p.nodeId !== sceneId) return;
-    const exploreOk = this.sandbox
-      || ["morning", "afternoon", "evening"].includes(this.state.phase)
+    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
       || (sceneId === "canteen" && this.state.phase === "noon");
     if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
     const isChair = this.factionOf.get(id) === "chair";
@@ -1328,12 +1332,6 @@ export class GameRoom extends Room<GameState> {
   private eliminate(id: string, cause: string) {
     const p = this.state.players.get(id);
     if (!p || !p.alive) return;
-    if (this.sandbox) {
-      // 测试员不会出局：倒下即恢复，继续测试其他内容
-      p.hp = 50; p.san = 50; p.hunger = Math.max(p.hunger, 40);
-      this.sendNoticeTo(id, `测试模式：按规则你已因「${cause}」倒下，但测试员不会出局，状态已恢复。`);
-      return;
-    }
     p.alive = false;
     const faction = this.factionOf.get(id) === "chair" ? "理事长" : "干事";
     this.broadcast("notice", { text: `${p.name}（${faction}）因${cause}被淘汰。` });
@@ -1373,81 +1371,6 @@ export class GameRoom extends Room<GameState> {
       reason,
       chairs: aliveChairs.map((id) => this.state.players.get(id)!.name),
       students: aliveStudents.map((id) => this.state.players.get(id)!.name),
-    });
-  }
-
-  // ---------- 沙盒（探索测试房） ----------
-
-  /** 测试员进房：发地图/规则板，默认干事身份，资金充裕 */
-  private joinSandbox(client: Client, options: JoinOptions) {
-    const id = client.sessionId;
-    if (this.state.players.has(id)) { // 断线重进：补发开局数据
-      this.state.players.get(id)!.connected = true;
-      client.send("init", this.sandboxInit());
-      client.send("role", { faction: this.factionOf.get(id) ?? "student", chairs: [] });
-      return;
-    }
-    const p = new Player();
-    p.name = String(options.name || "测试员").slice(0, 12);
-    p.gender = options.gender === "female" ? "female" : "male";
-    p.coins = 100;
-    this.state.players.set(id, p);
-    this.factionOf.set(id, "student");
-    this.recs.set(id, newDayRecord());
-    this.prevNode.set(id, p.nodeId);
-    client.send("init", this.sandboxInit());
-    client.send("role", { faction: "student", chairs: [] });
-    this.sendNoticeTo(id, "探索测试：自由走动，触发事件、答题、购物、回收。数值会自动回复，永不淘汰。");
-  }
-
-  private sandboxInit() {
-    return {
-      nodes: NODES,
-      edges: EDGES,
-      fixedRules: FIXED_RULES,
-      ruleBoard: this.board,
-      dayTotal: DAY_TOTAL,
-      lootMult: 1.5,
-    };
-  }
-
-  /** 切换干事/理事长视角：理事长的假交互也可测试 */
-  private onSandboxRole(client: Client) {
-    const id = client.sessionId;
-    if (!this.state.players.has(id)) return;
-    const next: Faction = this.factionOf.get(id) === "chair" ? "student" : "chair";
-    this.factionOf.set(id, next);
-    client.send("role", { faction: next, chairs: [] });
-    this.sendNoticeTo(id, next === "chair"
-      ? "已切换为理事长视角：交互均为假装交互——能看到房间信息，但不消耗、不获得、不占点位。"
-      : "已切换为干事视角：交互正常结算。此视角下请遵守校规，违规会被通报。");
-  }
-
-  /** 重置：先到先得点位、背包、违规记录全部清零，资金与状态回满 */
-  private onSandboxReset(client: Client) {
-    const p = this.state.players.get(client.sessionId);
-    if (!p) return;
-    this.claimed.clear();
-    this.visits.clear();
-    this.recycleBatch.clear();
-    this.roomUsed.clear();
-    this.todayViolationEvents = 0;
-    this.recs.set(client.sessionId, newDayRecord());
-    p.pack.clear();
-    p.items.clear();
-    p.keys = "";
-    p.food = 0; p.medicine = 0; p.scissors = 0; p.coffee = 0;
-    p.junk = 0; p.junkValue = 0; p.cards = 0;
-    p.coins = 100; p.hp = 100; p.san = 100; p.hunger = 100; p.ap = 10; p.alive = true;
-    this.sendNoticeTo(client.sessionId, "已重置：先到先得点位恢复可领，背包清空，资金与状态回满。");
-  }
-
-  /** 沙盒兜底：AP/饥饿/资金快见底时自动回补，保证测试不断流 */
-  private sandboxTopUp() {
-    this.state.players.forEach((p) => {
-      if (p.ap < 2) p.ap = 10;
-      if (p.hunger < 10) p.hunger = 60;
-      if (p.coins < 10) p.coins = 80;
     });
   }
 

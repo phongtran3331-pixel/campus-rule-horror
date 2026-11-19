@@ -5,7 +5,6 @@ import { PhaseBanner } from "./components/PhaseBanner";
 import { Terminal } from "./components/Terminal";
 import { IntroSequence } from "./components/IntroSequence";
 import { ExploreOverlay } from "./components/ExploreOverlay";
-import { SandboxScreen } from "./components/SandboxScreen";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -29,23 +28,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> 
 export default function App() {
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [debugRoom, setDebugRoom] = useState(false);
-  const [testRoom, setTestRoom] = useState<GameRoom | null>(null);
-  const [view, setView] = useState<"hub" | "lobby">("hub");
-  const enter = (r: GameRoom, debug: boolean) => { setDebugRoom(debug); setRoom(r); };
-  const enterTest = async () => {
-    try { setTestRoom(await colyseus.create("test", { name: "测试员" })); }
-    catch (e) { console.error("探索测试进入失败", e); }
-  };
+  const [solo, setSolo] = useState(false);
+  const [view, setView] = useState<"hub" | "lobby" | "solo">("hub");
+  const enter = (r: GameRoom, debug: boolean, soloMode = false) => { setDebugRoom(debug); setSolo(soloMode); setRoom(r); };
   return (
     <ErrorBoundary>
-      {testRoom ? (
-        <SandboxScreen room={testRoom} onLeave={() => setTestRoom(null)} />
-      ) : room ? (
-        <GameScreen room={room} debugRoom={debugRoom} onLeave={() => setRoom(null)} />
+      {room ? (
+        <GameScreen room={room} debugRoom={debugRoom} solo={solo} onLeave={() => setRoom(null)} />
       ) : view === "hub" ? (
-        <Hub onEnter={() => setView("lobby")} onTest={enterTest} />
+        <Hub onEnter={() => setView("lobby")} onSolo={() => setView("solo")} />
       ) : (
-        <Lobby onEnter={enter} onBack={() => setView("hub")} />
+        <Lobby solo={view === "solo"} onEnter={enter} onBack={() => setView("hub")} />
       )}
     </ErrorBoundary>
   );
@@ -53,7 +46,7 @@ export default function App() {
 
 // ---------- 主页（ATTO_page：各项目统一入口） ----------
 
-function Hub({ onEnter, onTest }: { onEnter: () => void; onTest: () => void }) {
+function Hub({ onEnter, onSolo }: { onEnter: () => void; onSolo: () => void }) {
   return (
     <div className="lobby">
       <header className="lobby-head">
@@ -69,10 +62,10 @@ function Hub({ onEnter, onTest }: { onEnter: () => void; onTest: () => void }) {
           <p>自管委在看着你 —— 多人联网规则怪谈生存。开房间，邀好友，遵守规则活到最后。</p>
           <span className="hub-card-go">进入 ›</span>
         </button>
-        <button className="hub-card live alt" onClick={onTest}>
-          <span className="hub-card-tag">单人 · 测试模式</span>
-          <h2>探索测试</h2>
-          <p>不进对局，自由走遍校园地图，触发所有场景事件、答题、购物与回收。</p>
+        <button className="hub-card live alt" onClick={onSolo}>
+          <span className="hub-card-tag">单人 · 试玩测试</span>
+          <h2>单人试玩</h2>
+          <p>不等匹配直接开局：9 人局其余 8 席挂机补位，规则、时段、投票、生存与正式对局完全一致。</p>
           <span className="hub-card-go">进入 ›</span>
         </button>
         <div className="hub-card soon">
@@ -92,22 +85,31 @@ function Hub({ onEnter, onTest }: { onEnter: () => void; onTest: () => void }) {
 
 // ---------- 大厅 ----------
 
-function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => void; onBack: () => void }) {
-  const [name, setName] = useState("");
+function Lobby({ onEnter, onBack, solo = false }: {
+  onEnter: (r: GameRoom, debug: boolean, soloMode?: boolean) => void;
+  onBack: () => void;
+  solo?: boolean;
+}) {
+  const [name, setName] = useState(solo ? "测试员" : "");
   const [gender, setGender] = useState<"male" | "female">("male");
+  const [faction, setFaction] = useState<"student" | "chair">("student");
   const [code, setCode] = useState("");
-  const [fast, setFast] = useState(false);
+  const [fast, setFast] = useState(solo);
   const [debug, setDebug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const opts = () => ({ name, gender, timeScale: fast ? 30 : 1, debug });
+  const opts = () => solo
+    ? ({ name, gender, timeScale: fast ? 30 : 1, debug: true, solo: true, soloFaction: faction })
+    : ({ name, gender, timeScale: fast ? 30 : 1, debug });
 
   const create = async () => {
     setBusy(true); setErr("");
     try {
-      onEnter(await colyseus.create("game", opts()), debug);
-    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+      const r = await colyseus.create("game", opts());
+      if (solo) r.send("start"); // 单人试玩：跳过匹配直接开局
+      onEnter(r, debug, solo);
+    } catch (e) { setErr(String(e)); setBusy(false); }
   };
   const join = async () => {
     if (!code.trim()) return;
@@ -123,7 +125,9 @@ function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => 
       <header className="lobby-head">
         <span className="lobby-badge">CAMPUS RULE HORROR</span>
         <h1 className="lobby-title">校园规则怪谈</h1>
-        <p className="lobby-sub">自管委在看着你 —— <em>遵守规则，活到最后</em></p>
+        <p className="lobby-sub">{solo
+          ? <>单人试玩 —— <em>其余 8 席挂机补位，内容与正式对局一致</em></>
+          : <>自管委在看着你 —— <em>遵守规则，活到最后</em></>}</p>
       </header>
 
       <div className="lobby-card">
@@ -140,25 +144,39 @@ function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => 
           </div>
         </div>
 
+        {solo && (
+          <div className="field">
+            <span>你的身份</span>
+            <div className="seg">
+              <button type="button" className={faction === "student" ? "on" : ""} onClick={() => setFaction("student")}>干事</button>
+              <button type="button" className={faction === "chair" ? "on" : ""} onClick={() => setFaction("chair")}>理事长</button>
+            </div>
+          </div>
+        )}
+
         <button className="btn-primary" disabled={busy || !name.trim()} onClick={create}>
-          {busy ? "正在进入校园…" : "创建房间"}
+          {busy ? "正在进入校园…" : solo ? "进入单人试玩" : "创建房间"}
         </button>
 
-        <div className="divider"><span>或凭邀请码加入</span></div>
+        {!solo && (
+          <>
+            <div className="divider"><span>或凭邀请码加入</span></div>
 
-        <div className="join-row">
-          <input className="code-input" placeholder="邀请码（区分大小写）" value={code}
-            maxLength={10} onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && join()} />
-          <button className="btn-ghost" disabled={busy || !code.trim()} onClick={join}>加入房间</button>
-        </div>
+            <div className="join-row">
+              <input className="code-input" placeholder="邀请码（区分大小写）" value={code}
+                maxLength={10} onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && join()} />
+              <button className="btn-ghost" disabled={busy || !code.trim()} onClick={join}>加入房间</button>
+            </div>
+          </>
+        )}
 
         {err && <p className="err">{err}</p>}
 
         <details className="debug">
-          <summary>对局设置</summary>
+          <summary>{solo ? "节奏设置" : "对局设置"}</summary>
           <label><input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} /> 快节奏演示模式（完整流程快速体验）</label>
-          <label><input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> 调试 · 允许直接开局（人数不足也可开始）</label>
+          {!solo && <label><input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} /> 调试 · 允许直接开局（人数不足也可开始）</label>}
         </details>
       </div>
     </div>
@@ -168,7 +186,7 @@ function Lobby({ onEnter, onBack }: { onEnter: (r: GameRoom, debug: boolean) => 
 // ---------- 对局 ----------
 
 interface Msg { kind: string; from?: string; text: string }
-function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: boolean; onLeave: () => void }) {
+function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugRoom: boolean; solo: boolean; onLeave: () => void }) {
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [init, setInit] = useState<RoomInit | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -228,7 +246,7 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
       )}
       <div className="main phone-main">
         <div className="phone-col">
-          {!started && (
+          {!started && !solo && (
             <div className="card waiting">
               <h3>对局房间</h3>
               <p className="waiting-code"><b>{room.roomId}</b></p>
@@ -245,6 +263,7 @@ function GameScreen({ room, debugRoom, onLeave }: { room: GameRoom; debugRoom: b
               )}
             </div>
           )}
+          {solo && started && <div className="solo-chip">单人试玩 · 其余 8 席挂机</div>}
           <Terminal
             room={room}
             me={me}

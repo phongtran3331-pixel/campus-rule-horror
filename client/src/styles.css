@@ -510,12 +510,6 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .act.ghost:hover { color: #cfc3e3; border-color: #6a549a; }
 
 
-/* 探索测试沙盒 */
-.sb-chip { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
-.sb-btn { font-size: 12px; padding: 5px 10px; white-space: nowrap; }
-.hub-card.live.alt { border-color: #2f4a5a; }
-.hub-card.live.alt:hover { border-color: #57a8c9; }
-.hub-card.live.alt .hub-card-tag { color: #8fd0e8; border-color: #2f5d75; }
-.sb-log { position: fixed; left: 16px; bottom: 14px; z-index: 70; max-width: 430px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
-.sb-log p { margin: 0; background: rgba(10, 13, 18, 0.94); border: 1px solid var(--line); border-left: 3px solid var(--teal); border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
-@media (max-width: 900px) { .sb-log { max-width: calc(100vw - 32px); } }
+
+/* 单人试玩 */
+.solo-chip { text-align: center; font-size: 12px; letter-spacing: 2px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin-bottom: 8px; }
