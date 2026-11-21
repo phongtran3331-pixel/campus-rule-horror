@@ -27,6 +27,12 @@ interface TextBlock { main: string; grants?: string[]; states?: string[]; fake?:
 
 const strip = (s: string) => s.replace(/\{[^}]*\}/g, "").trim();
 const STATE_CN: Record<string, string> = { ap: "行动值", hunger: "饥饿值", hp: "健康值", san: "精神值" };
+// 关键物品贴图（与 Terminal.tsx 背包一致）
+const ITEM_IMG: Record<string, string> = {
+  "关#1": "assets/items/key-community.png",
+  "关#6": "assets/items/key-locker.png",
+  "关#7": "assets/items/key-master.png",
+};
 // 每房间只注册一次消息监听（避免 StrictMode 双挂载与切节点残留）
 const wiredRooms = new WeakSet<object>();
 let lastResult: (SceneResult & { eventId: string }) | null = null;
@@ -257,7 +263,14 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         <div className="sv2-mask">
           <div className="sv2-modal">
             <p className="sv2-modal-title">获得物品</p>
-            <p className="sv2-modal-items">{grantModal.names.join("、")}</p>
+            <div className="sv2-modal-items">
+              {grantModal.refs.map((ref, i) => (
+                <div key={ref} className="sv2-modal-item">
+                  {ITEM_IMG[ref] && <img src={ITEM_IMG[ref]} alt={grantModal.names[i]} />}
+                  <span>{grantModal.names[i]}</span>
+                </div>
+              ))}
+            </div>
             <div className="sv2-modal-btns">
               <button className="sv2-opt" onClick={() => setGrantModal(null)}>收下</button>
               <button

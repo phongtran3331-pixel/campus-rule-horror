@@ -42,12 +42,12 @@
  "tA": {
   "name": "教学楼A",
   "situations": 1,
-  "events": 102
+  "events": 103
  },
  "tB": {
   "name": "教学楼B",
   "situations": 1,
-  "events": 76
+  "events": 77
  },
  "tC": {
   "name": "教学楼C",

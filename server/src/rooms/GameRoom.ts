@@ -68,6 +68,18 @@ export class GameRoom extends Room<GameState> {
   private shop = loadShop(this.wiki, this.scenes);
   private refName = refToName(this.wiki);
   private claimed = new Set<string>();                     // 先到先得："sceneId:eventId"（全局一次性）
+  // 关键物品全局库存：按 Wiki 编号序（与 refToName 同序）从 count "×N" 解析，"若干" 视为无限
+  private keyStock = (() => {
+    const stock = new Map<string, number>();
+    const seq: Record<string, number> = {};
+    for (const [name, w] of Object.entries(this.wiki)) {
+      if (w.seg !== "关") continue;
+      const n = (seq[w.seg] = (seq[w.seg] ?? 0) + 1);
+      const m = /^×(\d+)/.exec(w.count ?? "");
+      stock.set(`关#${n}`, m ? parseInt(m[1], 10) : Infinity);
+    }
+    return stock;
+  })();
   private visits = new Map<string, Set<string>>();           // dynamic_visit：本日各节点到访去重集合
   private recycleBatch = new Map<string, number>();          // 回收站：本日累计捡拾件数（每日重置）
   private noonDone = new Set<string>();                      // 午间确认：在线存活者全员确认/投票后跳入 14:00
@@ -779,7 +791,18 @@ export class GameRoom extends Room<GameState> {
     if (states.hunger) p.hunger = Math.min(100, Math.max(0, p.hunger + states.hunger));
     if (states.hp) p.hp = Math.min(100, Math.max(0, p.hp + states.hp));
     if (states.san) p.san = Math.min(100, Math.max(0, p.san + states.san));
-    for (const g of grants) p.pack.set(g.ref, (p.pack.get(g.ref) ?? 0) + 1);
+    // 关键物品全局库存：关段物品共享库存，发尽则该次获得落空（先到先得之外的全局上限）
+    let stockNote = "";
+    const granted = grants.filter((g) => {
+      const left = this.keyStock.get(g.ref);
+      if (left == null) return true; // 非关段，无库存概念
+      if (left <= 0) return false;
+      this.keyStock.set(g.ref, left - 1);
+      return true;
+    });
+    const shortBy = grants.length - granted.length;
+    if (shortBy > 0) stockNote = " 你伸手去拿，却落了个空——东西已经不在这里了。";
+    for (const g of granted) p.pack.set(g.ref, (p.pack.get(g.ref) ?? 0) + 1);
     for (const c of ev.consume ?? []) {
       const n = (p.pack.get(c) ?? 0) - 1;
       if (n <= 0) p.pack.delete(c); else p.pack.set(c, n);
@@ -798,9 +821,9 @@ export class GameRoom extends Room<GameState> {
     client.send("sceneResult", {
       sceneId, eventId, taken: false, fake: false,
       op: parsed.op ?? null,
-      grants: grants.map((g) => ({ name: g.name, ref: g.ref })),
+      grants: granted.map((g) => ({ name: g.name, ref: g.ref })),
       states,
-      text: text + foodNote,
+      text: text + stockNote + foodNote,
     });
   }
 

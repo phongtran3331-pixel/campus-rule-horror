@@ -217,6 +217,12 @@ function renderApp(app: AppId, p: Props): ReactNode {
 /** 实体背包：真实物品（pack=场景文本获得，wiki.json 描述）为主，旧掉落计数为杂物袋 */
 interface WikiItem { seg: string; num?: number; count?: string; value: number | null; weight: number; desc: string; effect?: string }
 const SEG_ORDER: Record<string, number> = { 普: 0, 高: 1, 关: 2, 耗: 3 };
+// 关键物品贴图（ref → 图片），无图物品仍用段色块
+const ITEM_IMG: Record<string, string> = {
+  "关#1": "assets/items/key-community.png",
+  "关#6": "assets/items/key-locker.png",
+  "关#7": "assets/items/key-master.png",
+};
 let wikiCache: Record<string, WikiItem> | null = null;
 function loadWiki(): Promise<Record<string, WikiItem>> {
   if (wikiCache) return Promise.resolve(wikiCache);
@@ -265,7 +271,9 @@ function BagGrid({ me, room }: { me: Player; room: GameRoom }) {
               className={`bag-slot has seg-${ref.split("#")[0]}${sel?.kind === "pack" && sel.ref === ref ? " sel" : ""}`}
               onClick={() => setSel({ kind: "pack", ref })}
             >
-              <span className="bag-icon">{name.slice(0, 2)}</span>
+              <span className="bag-icon">
+                {ITEM_IMG[ref] ? <img src={ITEM_IMG[ref]} alt={name} /> : name.slice(0, 2)}
+              </span>
               <span className="bag-n">{n}</span>
             </button>
           );
@@ -290,6 +298,7 @@ function BagGrid({ me, room }: { me: Player; room: GameRoom }) {
             const n = me.pack.get(sel.ref) ?? 0;
             return (
               <>
+                {ITEM_IMG[sel.ref] && <img className="bag-photo" src={ITEM_IMG[sel.ref]} alt={name} />}
                 <b>{name} ×{n}</b>
                 <span className="bag-ref">{sel.ref}{w?.value != null ? ` · 回收价 ${w.value} 币` : ""}{w?.weight ? ` · 负重 ${w.weight}` : ""}</span>
                 <p>{w?.desc ?? "一件来路不明的物品。"}</p>
