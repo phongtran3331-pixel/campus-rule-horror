@@ -600,7 +600,23 @@ export class GameRoom extends Room<GameState> {
     if (!p || !p.alive) return;
     if (!["morning", "afternoon", "evening"].includes(this.state.phase)) return;
     if (this.factionOf.get(client.sessionId) === "chair") {
-      this.sendNoticeTo(client.sessionId, "你翻找了一番。这里有些值钱的杂物、一把钥匙、几张纸片……你都记下了，但什么都没拿。");
+      // 与干事同一表现：同样的掉落文案，只是不实际入包（窥屏无法分辨）
+      const loot = rollLoot(new Set());
+      const parts: string[] = [];
+      if (loot.junk) {
+        const pool = [...(JUNK_NAMES[p.nodeId] ?? JUNK_NAMES.dorm)];
+        const names: string[] = [];
+        for (let i = 0; i < loot.junk && pool.length; i++) names.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+        parts.push(`${names.join("、")}（约 ${loot.junkValue} 币）`);
+      }
+      if (loot.food) parts.push(`${pick(FOOD_NAMES)} ×1`);
+      if (loot.medicine) parts.push(`${pick(MEDICINE_NAMES)} ×1`);
+      if (loot.scissors) parts.push("剪刀 ×1");
+      if (loot.coffee) parts.push("咖啡券 ×1");
+      if (loot.card) parts.push("查阅卡 ×1");
+      const roomId = this.subroom.get(client.sessionId) ?? null;
+      const scene = exploreText(roomId, p.nodeId, p.san);
+      this.sendNoticeTo(client.sessionId, scene + (parts.length ? `\n探索收获：${parts.join("、")}。` : ""));
       return;
     }
     if (p.ap < 1) { this.sendNoticeTo(client.sessionId, "行动值不足。"); return; }
@@ -638,7 +654,7 @@ export class GameRoom extends Room<GameState> {
 
   /**
    * 场景事件：客户端按 campus_text.json 渲染 choice，点击后提交到这里结算。
-   * 理事长一律假造交互（返回结构与房间信息，不消耗、不改变、不占用点位）。
+   * 理事长与干事共用同一套流程与文案；理事长结算不落库（详见 onSceneEvent 内注释）。
    */
   private onSceneEvent(client: Client, msg: { sceneId?: string; eventId?: string; answer?: string }) {
     const id = client.sessionId;
@@ -662,19 +678,39 @@ export class GameRoom extends Room<GameState> {
       return;
     }
     if (!ev) return;
-    const key = `${sceneId}:${eventId}`;
     const parsed = parseEvent(ev);
 
+    // 理事长与干事共用同一套探索（防窥屏）：文本、分支、答题、获得与状态展示完全一致
+    // 唯一差异：结算不落库——背包/数值不写、不占点位（不留下"被拿过"痕迹）、前置视为满足、
+    // 不预检行动值与货币（AP 耗尽仍可行动、清零仍可购买）。窥屏看到的界面与干事无异。
     if (isChair) {
-      // 假装交互：能看房间信息，不能带走
-      const fakeTexts: Record<string, string> = {
-        gate: "你站在门楼里看了一圈。登记本、钥匙板、快递盒……每件东西你都记住了位置和价值。",
-        woods: "你走进林子。树洞里、树根下、长椅缝隙里藏着什么，你一样样看过去，什么都没动。",
-      };
+      const visitN = String(this.visits.get(sceneId)?.size ?? 1);
+      let grants = parsed.grants;
+      let states = parsed.states;
+      let text = ev.result.replace(/\{今日到访\}/g, visitN).replace(/\{[^}]*\}/g, "").trim();
+      if (parsed.quiz) {
+        if (msg.answer == null) {
+          client.send("sceneQuiz", {
+            sceneId, eventId,
+            question: parsed.quiz.question,
+            numeric: parsed.quiz.ruleType !== "static",
+            rule: parsed.quiz.rule,
+          });
+          return;
+        }
+        const body = (ev.result.match(/\{答题:(.*)\}$/)?.[1]) ?? "";
+        const correct = this.isQuizCorrect(parsed.quiz, String(msg.answer ?? ""), sceneId);
+        const branch = parseQuizBranch(body, correct ? "答对" : "答错");
+        grants = branch.grants;
+        states = branch.states;
+        text = branch.text || (correct ? "回答正确。" : "回答错误。");
+      }
       client.send("sceneResult", {
-        sceneId, eventId, fake: true,
-        grants: [], states: {},
-        text: fakeTexts[sceneId] ?? "你做了个动作。这里有什么、值多少，你都一清二楚，但按规矩，你不能拿走。",
+        sceneId, eventId, taken: false, fake: false,
+        op: parsed.op ?? null,
+        grants: grants.map((g) => ({ name: g.name, ref: g.ref })),
+        states,
+        text,
       });
       return;
     }
@@ -704,6 +740,7 @@ export class GameRoom extends Room<GameState> {
 
     let grants = parsed.grants;
     let states = parsed.states;
+    const key = `${sceneId}:${eventId}`;
     const visitN = String(this.visits.get(sceneId)?.size ?? 1);
     let text = ev.result.replace(/\{今日到访\}/g, visitN).replace(/\{[^}]*\}/g, "").trim();
 
@@ -840,7 +877,8 @@ export class GameRoom extends Room<GameState> {
     if (!item) return;
     if (p.nodeId !== sceneId) { this.sendNoticeTo(client.sessionId, "不在这里，买不到。"); return; }
     if (this.factionOf.get(client.sessionId) === "chair") {
-      this.sendNoticeTo(client.sessionId, "购买成功。售货机没有少任何东西——本来也不会少。");
+      // 与干事同一表现：提示语一致，币与货都不实际变动（货币清零仍可购买）
+      this.sendNoticeTo(client.sessionId, `买到了${name}（-${item.price} 币），已入背包。`);
       return;
     }
     if (p.coins < item.price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${item.price} 币）。`); return; }
@@ -940,7 +978,8 @@ export class GameRoom extends Room<GameState> {
     const price = item === "food" ? PRICES.food : item === "scissors" ? PRICES.scissors : 0;
     if (!price) return;
     if (this.factionOf.get(client.sessionId) === "chair") {
-      this.sendNoticeTo(client.sessionId, "购买成功。售货机没有少任何东西——本来也不会少。");
+      // 与干事同一表现：提示语一致，币与货都不实际变动（货币清零仍可购买）
+      this.sendNoticeTo(client.sessionId, `${pick(NPC.marketBoss)}\n买到了${item === "food" ? pick(FOOD_NAMES) : "剪刀"}（-${price} 币）。`);
       return;
     }
     if (p.coins < price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${price} 币）。`); return; }
@@ -955,7 +994,8 @@ export class GameRoom extends Room<GameState> {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.nodeId !== "clinic") return;
     if (this.factionOf.get(client.sessionId) === "chair") {
-      this.sendNoticeTo(client.sessionId, "药师把药递给你。你随手放回了货架。");
+      // 与干事同一表现：提示语一致，币与货都不实际变动
+      this.sendNoticeTo(client.sessionId, `${pick(NPC.doctor)}\n买到了${pick(MEDICINE_NAMES)}（-${PRICES.medicine} 币），用 useMedicine 恢复 HP 或 SAN。`);
       return;
     }
     if (p.coins < PRICES.medicine) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${PRICES.medicine} 币）。`); return; }

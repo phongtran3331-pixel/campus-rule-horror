@@ -176,9 +176,10 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         const ev = scene.events[id];
         if (ev.room === screen.id) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id), kind: "rect" });
       }
+      opts.push({ key: "back-hub1", label: "返回地点列表", run: goHub, kind: "dim" });
       opts.push({ key: "exit-room", label: "回到大地图", run: onExit, kind: "dim" });
     } else {
-      // result 屏幕：子分支 + 操作控件；END 后返回所在房间界面（不耗 AP），也可直接回大地图
+      // result 屏幕：子分支 + 操作控件；END 后只能返回地点列表（子节点选择界面）或大地图，不能退回房间
       const ev = result ? scene.events[result.eventId] : null;
       if (result && ev?.children) {
         for (const c of ev.children) {
@@ -189,9 +190,7 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
       if (result?.op && !result.fake) {
         for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run, kind: "rect" });
       }
-      const roomOf = result ? ev?.room : undefined;
-      if (roomOf) opts.push({ key: "back-room", label: `返回${roomOf}`, run: () => goRoom(roomOf), kind: "dim" });
-      else opts.push({ key: "back-hub2", label: "返回", run: goHub, kind: "dim" });
+      opts.push({ key: "back-hub2", label: "返回地点列表", run: goHub, kind: "dim" });
       opts.push({ key: "exit-map", label: "回到大地图", run: onExit, kind: "dim" });
     }
   }
@@ -204,7 +203,6 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
             <TypeText text={text.main} />
             {text.grants && <p className="sv2-grants">获得：{text.grants.join("、")}</p>}
             {text.states && <p className="sv2-states">{text.states.join("，")}</p>}
-            {text.fake && <p className="sv2-fake">（你记住了这里的一切。它不会少，你也不会多。）</p>}
           </>
         ) : (
           busy && <p className="sv2-dots">……</p>
