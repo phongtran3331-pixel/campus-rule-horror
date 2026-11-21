@@ -31,7 +31,11 @@ async function main() {
         if (other) r.send("vote", { targetId: other });
       }
     }
-  }, 500);
+  }, 200);
+  // timeScale 22 下探索时段仅 8—11 秒：每次发事件前确保处于探索时段
+  const waitExplore = async () => {
+    await waitFor(() => ["morning", "afternoon", "evening"].includes(r.state.phase), 90000, 100);
+  };
 
   // ===== 教学楼A 新结构 =====
   r.send("move", { nodeId: "tA" });
@@ -40,7 +44,7 @@ async function main() {
   // 1) 第0天：SAN-6 原值结算
   const san0 = me().san;
   let n = results.length;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "y001c" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y001c" });
   await waitFor(() => results.length > n);
   let res = results[results.length - 1];
   check(res.states.san === -6 && me().san === san0 - 6, `第0天 y001c SAN 标注-6 实扣-6（${san0}→${me().san}）`);
@@ -48,7 +52,7 @@ async function main() {
   // 2) 深度探索：y002b1 得旧课本且 AP-1
   const ap0 = me().ap;
   n = results.length;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "y002b1" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y002b1" });
   await waitFor(() => results.length > n);
   res = results[results.length - 1];
   check(res.grants.some((g) => g.ref === "普#4") && me().ap === ap0 - 1,
@@ -59,25 +63,25 @@ async function main() {
   r.send("move", { nodeId: "gym" });
   await waitFor(() => me().nodeId === "gym");
   n = results.length;
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y148" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y148" });
   await waitFor(() => results.length > n);
   res = results[results.length - 1];
   check(res.text.includes("拖动痕迹"), "y148 杠铃架拖痕入口");
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y149" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y149" });
   await waitFor(() => results.length > n + 1);
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y150" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y150" });
   await waitFor(() => results.length > n + 2);
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y150a" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y150a" });
   await waitFor(() => results.length > n + 3);
   res = results[results.length - 1];
   check(res.states.san === -2 && res.states.ap === -1, `y150a 深度探索 SAN-2 AP-1（实扣 ${res.states.san}/${res.states.ap}）`);
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y151" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y151" });
   await waitFor(() => results.length > n + 4);
-  r.send("sceneEvent", { sceneId: "gym", eventId: "y152" });
+  await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y152" });
   await waitFor(() => quizzes.length > 0 || results.length > n + 5);
   check(quizzes.length > 0 && quizzes[0].rule.includes("预设正确选项=第2项"), "y152 返回答题（静态题）");
   if (quizzes.length) {
-    r.send("sceneEvent", { sceneId: "gym", eventId: "y152", answer: "2次" });
+    await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y152", answer: "2次" });
     await waitFor(() => results.length > n + 5);
     res = results[results.length - 1];
     check(res.grants.some((g) => g.name === "杠铃杆"), "y152 答对获得杠铃杆(关#2)");
@@ -92,7 +96,7 @@ async function main() {
     await waitFor(() => me().nodeId === "tA");
     const san1 = me().san;
     n = results.length;
-    r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
+    await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
     await waitFor(() => results.length > n);
     res = results[results.length - 1];
     const expect = Math.min(0, Math.floor(-6 - (r.state.day * -6) / 5));
