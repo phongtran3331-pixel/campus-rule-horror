@@ -542,13 +542,14 @@ button.act.danger { border-color: #a33; color: #ff9b94; }
 .sv2-opt:disabled { opacity: .4; }
 .sv2-opt.dim { background: none; border-color: transparent; color: #64788c; font-size: 13px; font-weight: 400; padding: 6px 14px; }
 .sv2-opt.dim:hover:not(:disabled) { color: #9fb6c8; border-color: transparent; background: rgba(255,255,255,.03); }
-/* 地点卡片：圆角正方形，灰底白字加粗 */
+/* 地点卡片：圆角正方形，按房间名散列色相（--h），深色渐变 + 描边 + 微投影 */
 .sv2-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.sv2-card { position: relative; aspect-ratio: 1.25; background: #4a545f; border: 1px solid #5b6673; border-radius: 16px; color: #fff; font-weight: 700; font-size: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: background .15s, border-color .15s; animation: fade-up .25s ease both; }
-.sv2-card:hover:not(:disabled) { background: #5d6a77; border-color: #78868f; }
+.sv2-card { position: relative; aspect-ratio: 1.25; border-radius: 16px; color: #fff; font-weight: 700; font-size: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px solid hsl(var(--h), 30%, 42%); background: linear-gradient(155deg, hsl(var(--h), 28%, 33%), hsl(var(--h), 32%, 19%) 72%); box-shadow: inset 0 1px 0 hsla(var(--h), 45%, 60%, .20), 0 3px 10px rgba(0,0,0,.35); transition: transform .12s, filter .15s, border-color .15s; animation: fade-up .25s ease both; }
+.sv2-card:hover:not(:disabled) { filter: brightness(1.2); border-color: hsl(var(--h), 42%, 56%); }
+.sv2-card:active:not(:disabled) { transform: scale(.96); }
 .sv2-card:disabled { opacity: .4; }
-.sv2-card-name { letter-spacing: 1px; }
-.sv2-card-cost { font-size: 11px; font-weight: 400; color: #c3ccd4; }
+.sv2-card-name { letter-spacing: 1px; text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+.sv2-card-cost { font-size: 11px; font-weight: 400; color: #eef3f7; background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 1px 9px; }
 /* 地图侧与节点内系统按钮：灰底白字加粗 */
 .eo-card .act, .eo-node-full .act { background: #4a545f; border-color: #5b6673; color: #fff; font-weight: 700; font-size: 13px; padding: 9px 14px; border-radius: 8px; }
 .eo-card .act:hover:not(:disabled), .eo-node-full .act:hover:not(:disabled) { background: #5d6a77; border-color: #78868f; }

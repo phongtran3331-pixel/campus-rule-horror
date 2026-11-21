@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { GameRoom } from "../lib/client";
+
+// 房间卡配色：名称散列 → 色相（同一房间颜色稳定，不同房间错开）
+const roomHue = (name: string): number => {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + (ch.codePointAt(0) ?? 0)) % 360;
+  return h;
+};
 
 interface SceneEv { choice: string; result: string; result_taken?: string; room?: string; children?: string[] }
 interface SceneJson {
@@ -42,6 +49,12 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
   const [quiz, setQuiz] = useState<QuizMsg | null>(null);
   const [grantModal, setGrantModal] = useState<{ names: string[]; refs: string[] } | null>(null);
 
+  // 轮询闭包只认首次渲染：nodeId / scene 必须走 ref，否则切节点后 sceneEntered 被丢弃、rooms 还是空对象
+  const nodeIdRef = useRef(nodeId);
+  const sceneRef = useRef(scene);
+  nodeIdRef.current = nodeId;
+  sceneRef.current = scene;
+
   useEffect(() => {
     let dead = false;
     setScene(null); setScreen({ k: "hub" }); setText(null); setResult(null); setQuiz(null); setBusy(null); setGrantModal(null);
@@ -81,7 +94,12 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
       if (lastQuiz) { setQuiz(lastQuiz); lastQuiz = null; setBusy(null); }
       if (lastEntered) {
         const m = lastEntered; lastEntered = null;
-        if (m.sceneId === nodeId) { setBusy(null); goRoom(m.room); }
+        if (m.sceneId === nodeIdRef.current) {
+          setBusy(null);
+          setScreen({ k: "room", id: m.room });
+          setText({ main: sceneRef.current?.rooms?.[m.room] ?? "" });
+          setResult(null); setQuiz(null);
+        }
       }
     }, 300);
     return () => clearInterval(t);
@@ -204,10 +222,11 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
           <>
             {/* 地点卡片：圆角正方形，进入 -1 AP（干事） */}
             <div className="sv2-cards">
-              {roomNames.map((name) => (
+              {roomNames.map((name, i) => (
                 <button
                   key={name}
                   className="sv2-card"
+                  style={{ "--h": roomHue(name), animationDelay: `${i * 40}ms` } as CSSProperties}
                   disabled={busy !== null}
                   onClick={() => enterRoom(name)}
                 >
@@ -259,19 +278,20 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
 function TypeText({ text }: { text: string }) {
   const [n, setN] = useState(0);
   const full = useRef(false);
+  const safe = text ?? "";
   useEffect(() => { setN(0); full.current = false; }, [text]);
   useEffect(() => {
-    if (n >= text.length) return;
-    const t = setTimeout(() => setN((v) => Math.min(v + 2, text.length)), 18);
+    if (n >= safe.length) return;
+    const t = setTimeout(() => setN((v) => Math.min(v + 2, safe.length)), 18);
     return () => clearTimeout(t);
-  }, [n, text]);
-  const done = n >= text.length;
+  }, [n, safe]);
+  const done = n >= safe.length;
   return (
     <p
       className="sv2-main"
-      onClick={() => { if (!done) { setN(text.length); full.current = true; } }}
+      onClick={() => { if (!done) { setN(safe.length); full.current = true; } }}
     >
-      {text.slice(0, n)}
+      {safe.slice(0, n)}
       {!done && <span className="sv2-caret">▌</span>}
     </p>
   );
