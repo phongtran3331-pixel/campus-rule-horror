@@ -679,6 +679,18 @@ export class GameRoom extends Room<GameState> {
       return;
     }
 
+    // 物品前置：need 全部持有 / needAny 至少一件；不满足回 deny 文案，不结算
+    const lacksAll = (ev.need ?? []).filter((r) => (p.pack.get(r) ?? 0) < 1);
+    const lacksAny = (ev.needAny ?? []).length > 0 && (ev.needAny ?? []).every((r) => (p.pack.get(r) ?? 0) < 1);
+    if (lacksAll.length > 0 || lacksAny) {
+      client.send("sceneResult", {
+        sceneId, eventId, taken: false, fake: false, op: null,
+        grants: [], states: {},
+        text: ev.deny ?? "条件不满足，无法继续。",
+      });
+      return;
+    }
+
     // 答题：首次提交返回题目（answer 缺省），客户端弹填空 UI 后再带答案提交
     if (parsed.quiz && msg.answer == null) {
       client.send("sceneQuiz", {
@@ -727,6 +739,10 @@ export class GameRoom extends Room<GameState> {
     if (states.hp) p.hp = Math.min(100, Math.max(0, p.hp + states.hp));
     if (states.san) p.san = Math.min(100, Math.max(0, p.san + states.san));
     for (const g of grants) p.pack.set(g.ref, (p.pack.get(g.ref) ?? 0) + 1);
+    for (const c of ev.consume ?? []) {
+      const n = (p.pack.get(c) ?? 0) - 1;
+      if (n <= 0) p.pack.delete(c); else p.pack.set(c, n);
+    }
 
     // 食堂问题食物：{操作:随机判定——概率食物存在问题}（以文本标注为准，20% 概率 HP/SAN -10）
     let foodNote = "";

@@ -8,6 +8,10 @@ export interface SceneEvent {
   choice: string;
   result: string;
   result_taken?: string;
+  need?: string[];      // 物品前置：需全部持有（ref 如 "普#1"），不满足回 deny 文案
+  needAny?: string[];   // 物品前置：至少持有一件
+  consume?: string[];   // 结算成功时从背包扣除
+  deny?: string;        // 前置不满足时的拒绝文案
 }
 export interface SceneData {
   situations: Record<string, string>;
