@@ -59,7 +59,7 @@ export class GameRoom extends Room<GameState> {
   private facilityLog: Array<{ facility: string; day: number; phase: string; label: string }> = [];
   private commend: { id: string; day: number } | null = null;  // 三好学生表彰
   private guarantee = new Map<string, string>();           // targetId -> guarantorId（当日匿名担保）
-  private pendingApBonus = new Set<string>();              // 表彰兑现：次日 AP 15
+  private pendingApBonus = new Set<string>();              // 表彰兑现：次日 AP 30
   // M5：交互文本库——子房间位置追踪（仅叙事用，不进同步状态）
   private subroom = new Map<string, string>();             // sessionId -> "<nodeId>:<房号>"
   // M6：真实场景文本——服务端只判状态与编号，文案客户端渲染
@@ -103,6 +103,8 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("explore", (client) => this.onExplore(client));
     // M6：场景文本事件（含答题与先到先得结算）
     this.onMessage("sceneEvent", (client, msg: { sceneId?: string; eventId?: string; answer?: string }) => this.onSceneEvent(client, msg));
+    // M6：进入场景内房间（干事 -1 AP，理事长免费）
+    this.onMessage("sceneRoom", (client, msg: { sceneId?: string; room?: string }) => this.onSceneRoom(client, msg));
     // M6：背包交互——购买（货表来自场景文案）/ 回收站选物变现 / 使用消耗品
     this.onMessage("sceneBuy", (client, msg: { sceneId?: string; name?: string }) => this.onSceneBuy(client, msg));
     this.onMessage("packRecycle", (client, msg: { refs?: string[] }) => this.onPackRecycle(client, msg));
@@ -254,7 +256,7 @@ export class GameRoom extends Room<GameState> {
     if (phase === "morning") {
       this.state.players.forEach((p, id) => {
         if (!p.alive) return;
-        p.ap = this.pendingApBonus.has(id) ? 15 : 10; // 表彰兑现：次日 15 AP
+        p.ap = this.pendingApBonus.has(id) ? 30 : 20; // 表彰兑现：次日 30 AP
         this.recs.set(id, newDayRecord());       // 每日记录清零
         this.prevNode.set(id, p.nodeId);
       });
@@ -743,6 +745,24 @@ export class GameRoom extends Room<GameState> {
       states,
       text: text + foodNote,
     });
+  }
+
+  /** 进入场景内房间：干事 -1 AP（理事长免费）；成功后回 sceneEntered 供客户端切屏 */
+  private onSceneRoom(client: Client, msg: { sceneId?: string; room?: string }) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id);
+    const sceneId = String(msg?.sceneId ?? "");
+    const room = String(msg?.room ?? "");
+    if (!p || !p.alive || p.nodeId !== sceneId) return;
+    if (!this.scenes[sceneId]?.rooms?.[room]) return;
+    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
+      || (sceneId === "canteen" && this.state.phase === "noon");
+    if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
+    if (this.factionOf.get(id) !== "chair") {
+      if (p.ap < 1) { this.sendNoticeTo(id, "行动值不足（需 1 AP）。"); return; }
+      p.ap -= 1;
+    }
+    client.send("sceneEntered", { sceneId, room });
   }
 
   // ---------- M6：背包交互 ----------

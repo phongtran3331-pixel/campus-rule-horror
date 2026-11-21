@@ -11,6 +11,8 @@ export interface SceneEvent {
 }
 export interface SceneData {
   situations: Record<string, string>;
+  rooms?: Record<string, string>;
+  intro?: string;
   events: Record<string, SceneEvent>;
 }
 

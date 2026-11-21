@@ -46,7 +46,7 @@ export const ITEM_CATALOG: ItemDef[] = [
   { id: "poker",          name: "扑克牌",     icon: "🃏", desc: "缺了大小王。牌面摸起来潮潮的。", src: "items" },
   { id: "novel",          name: "无名小说",   icon: "📕", desc: "图书馆藏书，借书卡上只有一个名字被反复填写。", src: "items" },
   { id: "walkman",        name: "随身听",     icon: "🎧", desc: "磁带转了一半卡住了。倒回去，是同一段倒带声。", src: "items" },
-  { id: "rosary",         name: "念珠",       icon: "📿", desc: "不知道属于谁。数一遍是 33 颗，再数一遍不是。", src: "items" },
+  { id: "rosary",         name: "念珠",       icon: "📿", desc: "不知道属于谁。珠子被盘得很亮，绳结却是新打的。", src: "items" },
   { id: "umbrella",       name: "坏伞",       icon: "☂️", desc: "伞骨断了两根。晴天也带在身上吧。", src: "items" },
   { id: "textbook",       name: "旧课本",     icon: "📚", desc: "扉页名字被涂黑了，涂得很用力。", src: "items" },
   { id: "bottle",         name: "空瓶",       icon: "🍼", desc: "瓶底沉着一点白色的东西。", src: "items" },

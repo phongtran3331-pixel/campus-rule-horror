@@ -9,7 +9,7 @@ export class Player extends Schema {
   @type("string") nodeId = "dorm";
   @type("number") hp = 100;
   @type("number") san = 100;
-  @type("number") ap = 10;
+  @type("number") ap = 20;
   @type("number") hunger = 100;
   @type("number") coins = 20;
   @type("boolean") alive = true;

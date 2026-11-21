@@ -24,6 +24,7 @@ const STATE_CN: Record<string, string> = { ap: "行动值", hunger: "饥饿值",
 const wiredRooms = new WeakSet<object>();
 let lastResult: (SceneResult & { eventId: string }) | null = null;
 let lastQuiz: QuizMsg | null = null;
+let lastEntered: { sceneId: string; room: string } | null = null;
 
 type Screen = { k: "hub" } | { k: "room"; id: string } | { k: "result" };
 
@@ -53,6 +54,7 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
     wiredRooms.add(room);
     room.onMessage("sceneResult", (r: SceneResult) => { lastResult = { ...r, eventId: r.eventId }; lastQuiz = null; });
     room.onMessage("sceneQuiz", (q: QuizMsg) => { lastQuiz = q; });
+    room.onMessage("sceneEntered", (m: { sceneId: string; room: string }) => { lastEntered = m; });
   }, [room]);
 
   // 轮询式消费消息（房间级单监听，组件挂载后每 300ms 同步一次）
@@ -77,6 +79,10 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         }
       }
       if (lastQuiz) { setQuiz(lastQuiz); lastQuiz = null; setBusy(null); }
+      if (lastEntered) {
+        const m = lastEntered; lastEntered = null;
+        if (m.sceneId === nodeId) { setBusy(null); goRoom(m.room); }
+      }
     }, 300);
     return () => clearInterval(t);
   }, []);
@@ -103,6 +109,13 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
     setQuiz(null);
     room.send("sceneEvent", { sceneId: nodeId, eventId });
   };
+  // 进房间：干事 -1 AP（服务端判定），成功回 sceneEntered 后切屏；无回应 2.5s 解除等待
+  const enterRoom = (name: string) => {
+    if (busy) return;
+    setBusy(`room:${name}`);
+    room.send("sceneRoom", { sceneId: nodeId, room: name });
+    window.setTimeout(() => setBusy((b) => (b === `room:${name}` ? null : b)), 2500);
+  };
   const answerQuiz = (answer: string) => {
     if (!quiz || !answer.trim()) return;
     setBusy(quiz.eventId);
@@ -122,42 +135,46 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
   };
 
   // —— 组装当前屏幕的选项 ——
-  type Opt = { key: string; label: string; run: () => void; dim?: boolean };
+  // kind: sq = 圆角正方形地点卡（房间）；rect = 圆角长方形事件卡；dim = 暗色导航
+  type Opt = { key: string; label: string; run: () => void; kind: "sq" | "rect" | "dim" };
   const opts: Opt[] = [];
   if (!busy && !quiz) {
     if (screen.k === "hub") {
-      if (hasRooms) {
-        for (const name of roomNames) opts.push({ key: `r:${name}`, label: `走进${name}`, run: () => goRoom(name) });
+      if (!hasRooms) {
+        for (const id of topIds) opts.push({ key: `e:${id}`, label: strip(scene.events[id].choice), run: () => clickEvent(id), kind: "rect" });
+      } else {
         for (const id of topIds) {
           const ev = scene.events[id];
-          if (!ev.room) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id) });
+          if (!ev.room) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id), kind: "rect" });
         }
         // 幻觉入口：SAN≤30 时教学楼多出「不存在的 404 教室」
         if (/^t[A-C]$/.test(nodeId) && san <= 30) {
-          opts.push({ key: "illusion", label: "走廊尽头多出一间 404 教室……", run: () => clickEvent("__illusion"), dim: true });
+          opts.push({ key: "illusion", label: "走廊尽头多出一间 404 教室……", run: () => clickEvent("__illusion"), kind: "dim" });
         }
-      } else {
-        for (const id of topIds) opts.push({ key: `e:${id}`, label: strip(scene.events[id].choice), run: () => clickEvent(id) });
+        opts.push({ key: "exit-hub", label: "回到大地图", run: onExit, kind: "dim" });
       }
     } else if (screen.k === "room") {
       for (const id of topIds) {
         const ev = scene.events[id];
-        if (ev.room === screen.id) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id) });
+        if (ev.room === screen.id) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id), kind: "rect" });
       }
-      opts.push({ key: "back-hub", label: "退出来", run: goHub, dim: true });
+      opts.push({ key: "exit-room", label: "回到大地图", run: onExit, kind: "dim" });
     } else {
-      // result 屏幕：子分支 + 操作控件；分支到底后回到地图（对话分支不可回溯）
+      // result 屏幕：子分支 + 操作控件；END 后返回所在房间界面（不耗 AP），也可直接回大地图
       const ev = result ? scene.events[result.eventId] : null;
       if (result && ev?.children) {
         for (const c of ev.children) {
           const ce = scene.events[c];
-          if (ce) opts.push({ key: `c:${c}`, label: strip(ce.choice), run: () => clickEvent(c) });
+          if (ce) opts.push({ key: `c:${c}`, label: strip(ce.choice), run: () => clickEvent(c), kind: "rect" });
         }
       }
       if (result?.op && !result.fake) {
-        for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run });
+        for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run, kind: "rect" });
       }
-      opts.push({ key: "exit-map", label: "回到地图", run: onExit, dim: true });
+      const roomOf = result ? ev?.room : undefined;
+      if (roomOf) opts.push({ key: "back-room", label: `返回${roomOf}`, run: () => goRoom(roomOf), kind: "dim" });
+      else opts.push({ key: "back-hub2", label: "返回", run: goHub, kind: "dim" });
+      opts.push({ key: "exit-map", label: "回到大地图", run: onExit, kind: "dim" });
     }
   }
 
@@ -183,10 +200,32 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
             <QuizFill numeric={quiz.numeric} onSubmit={answerQuiz} />
             <p className="sv2-quiz-rule">判定：{quiz.rule}</p>
           </div>
+        ) : screen.k === "hub" && hasRooms ? (
+          <>
+            {/* 地点卡片：圆角正方形，进入 -1 AP（干事） */}
+            <div className="sv2-cards">
+              {roomNames.map((name) => (
+                <button
+                  key={name}
+                  className="sv2-card"
+                  disabled={busy !== null}
+                  onClick={() => enterRoom(name)}
+                >
+                  <span className="sv2-card-name">{name}</span>
+                  <span className="sv2-card-cost">-1 AP</span>
+                </button>
+              ))}
+            </div>
+            {opts.filter((o) => o.kind !== "sq").map((o) => (
+              <button key={o.key} className={`sv2-opt${o.kind === "dim" ? " dim" : ""}`} disabled={busy !== null} onClick={o.run}>
+                {o.label}
+              </button>
+            ))}
+          </>
         ) : (
           <>
             {opts.map((o) => (
-              <button key={o.key} className={`sv2-opt${o.dim ? " dim" : ""}`} disabled={busy !== null} onClick={o.run}>
+              <button key={o.key} className={`sv2-opt${o.kind === "dim" ? " dim" : ""}`} disabled={busy !== null} onClick={o.run}>
                 {o.label}
               </button>
             ))}

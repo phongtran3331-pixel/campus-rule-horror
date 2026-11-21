@@ -69,7 +69,7 @@ async function main() {
   host.send("start");
   const init = await initP;
   // 预热：等角色私发 + 状态同步就绪，避免开局消息积压
-  await waitFor(() => Object.keys(roles).length === 5 && stOf(host, host.sessionId)?.ap === 10, 6000);
+  await waitFor(() => Object.keys(roles).length === 5 && stOf(host, host.sessionId)?.ap === 20, 6000);
 
   const stuIds = Object.keys(roles).filter((id) => roles[id].faction === "student");
   const stuClients = stuIds.map((id) => all.find((r) => r.sessionId === id));
@@ -106,7 +106,9 @@ async function main() {
   stu.send("move", { nodeId: "dorm" });
   check(await waitFor(() => notices.some((t) => t.includes("违反了校规")), 4000), "F1 上午返回宿舍触发匿名通报");
   await arrive(stu, studentId, "dorm", 3000);
-  check(await waitFor(() => stOf(host, jia.sessionId).ap <= 9, 3000), "探索消耗 1 AP");
+  const apBeforeExplore = stOf(host, jia.sessionId).ap;
+  jia.send("explore");
+  check(await waitFor(() => stOf(host, jia.sessionId).ap === apBeforeExplore - 1, 3000), "探索消耗 1 AP");
 
   // 办公室档案（社区，需预约+钥匙）
   await arrive(yi, yi.sessionId, "community", 5000);
