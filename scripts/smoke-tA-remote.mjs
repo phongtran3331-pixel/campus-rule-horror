@@ -1,4 +1,4 @@
-// 教学楼A need/consume/deny 机制专项冒烟
+// 教学楼A新版 + 天数衰减 + 体育馆杠铃杆链 专项冒烟
 import { createRequire } from "node:module";
 const { Client } = createRequire(import.meta.url)("colyseus.js");
 const client = new Client("ws://192.144.254.107:2567");
@@ -14,79 +14,93 @@ const check = (c, label) => { console.log(`${c ? "✓" : "✗"} ${label}`); if (
 async function main() {
   const r = await client.create("game", { name: "测", gender: "male", timeScale: 22, debug: true, solo: true, soloFaction: "student" });
   const results = [];
+  const quizzes = [];
   r.onMessage("sceneResult", (m) => results.push(m));
+  r.onMessage("sceneQuiz", (m) => quizzes.push(m));
   r.onMessage("role", () => {});
   r.send("start");
-  if (!(await waitFor(() => r.state.phase !== "lobby", 8000))) { console.log("✗ 开局失败"); process.exit(1); }
-  if (!(await waitFor(() => ["morning", "afternoon", "evening"].includes(r.state.phase), 120000, 200))) { console.log("✗ 未进入探索时段"); process.exit(1); }
-
-  r.send("move", { nodeId: "tA" });
-  await waitFor(() => r.state.players.get(r.sessionId).nodeId === "tA");
+  if (!(await waitFor(() => r.state.phase !== "lobby", 8000))) throw new Error("开局失败");
+  if (!(await waitFor(() => ["morning", "afternoon", "evening"].includes(r.state.phase), 120000, 200))) throw new Error("未进入探索时段");
   const me = () => r.state.players.get(r.sessionId);
+  // 中午时段不计时：进入 noon 自动确认（第1天起还需投票），保证昼夜循环推进
+  const noonWatcher = setInterval(() => {
+    if (r.state.phase === "noon") {
+      r.send("noonDone");
+      if (r.state.day >= 1) {
+        const other = [...r.state.players.keys()].find((id) => id !== r.sessionId);
+        if (other) r.send("vote", { targetId: other });
+      }
+    }
+  }, 500);
 
-  // 1) 深度入口无前置物品 → deny 文案，无结算
-  const n0 = results.length;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "10105" });
-  await waitFor(() => results.length > n0);
+  // ===== 教学楼A 新结构 =====
+  r.send("move", { nodeId: "tA" });
+  await waitFor(() => me().nodeId === "tA");
+
+  // 1) 第0天：SAN-6 原值结算
+  const san0 = me().san;
+  let n = results.length;
+  r.send("sceneEvent", { sceneId: "tA", eventId: "y001c" });
+  await waitFor(() => results.length > n);
   let res = results[results.length - 1];
-  check(res.text.includes("回声都是实的") && res.grants.length === 0, `无半截粉笔进 10105 回 deny：「${res.text.slice(0, 24)}…」`);
+  check(res.states.san === -6 && me().san === san0 - 6, `第0天 y001c SAN 标注-6 实扣-6（${san0}→${me().san}）`);
 
-  // 2) 普通事件拿半截粉笔（10101a）
-  r.send("sceneEvent", { sceneId: "tA", eventId: "10101a" });
-  await waitFor(() => results.length > n0 + 1);
+  // 2) 深度探索：y002b1 得旧课本且 AP-1
+  const ap0 = me().ap;
+  n = results.length;
+  r.send("sceneEvent", { sceneId: "tA", eventId: "y002b1" });
+  await waitFor(() => results.length > n);
   res = results[results.length - 1];
-  check(res.grants.some((g) => g.ref === "普#1"), "10101a 获得半截粉笔");
+  check(res.grants.some((g) => g.ref === "普#4") && me().ap === ap0 - 1, "y002b1 深度探索得旧课本且 AP-1");
 
-  // 3) 持有前置后 10105 正常出分支动作文本
-  r.send("sceneEvent", { sceneId: "tA", eventId: "10105" });
-  await waitFor(() => results.length > n0 + 2);
+  // ===== 体育馆杠铃杆链 =====
+  const coins0 = me().coins;
+  r.send("move", { nodeId: "gym" });
+  await waitFor(() => me().nodeId === "gym");
+  n = results.length;
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y148" });
+  await waitFor(() => results.length > n);
   res = results[results.length - 1];
-  check(res.text.includes("空洞的回声"), `持半截粉笔 10105 通过前置：「${res.text.slice(0, 20)}…」`);
-
-  // 4) 分支撬夹层：-1AP + 半张教师名单
-  const apBefore = me().ap;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "10105a" });
-  await waitFor(() => results.length > n0 + 3);
+  check(res.text.includes("拖动痕迹"), "y148 杠铃架拖痕入口");
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y149" });
+  await waitFor(() => results.length > n + 1);
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y150" });
+  await waitFor(() => results.length > n + 2);
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y150a" });
+  await waitFor(() => results.length > n + 3);
   res = results[results.length - 1];
-  check(res.grants.some((g) => g.ref === "普#8") && me().ap === apBefore - 1, `10105a 得名单且 AP ${apBefore}→${me().ap}`);
-
-  // 5) 无剪刀点 20404a → deny
-  const n1 = results.length;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "20404a" });
-  await waitFor(() => results.length > n1);
-  res = results[results.length - 1];
-  check(res.grants.length === 0 && res.text.length > 0, `无剪刀 20404a 被拒：「${res.text.slice(0, 20)}…」`);
-
-  // 6) 答题分支首次返回题目（20304a）
-  const quizzes = [];
-  r.onMessage("sceneQuiz", (m) => quizzes.push(m));
-  const n2 = results.length;
-  r.send("sceneEvent", { sceneId: "tA", eventId: "20304a" });
-  await waitFor(() => quizzes.length > 0 || results.length > n2);
-  check(quizzes.length > 0, "20304a 返回答题（dynamic_alive 题）");
+  check(res.states.san === -2 && res.states.ap === -1, `y150a 深度探索 SAN-2 AP-1（实扣 ${res.states.san}/${res.states.ap}）`);
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y151" });
+  await waitFor(() => results.length > n + 4);
+  r.send("sceneEvent", { sceneId: "gym", eventId: "y152" });
+  await waitFor(() => quizzes.length > 0 || results.length > n + 5);
+  check(quizzes.length > 0 && quizzes[0].rule.includes("预设正确选项=第2项"), "y152 返回答题（静态题）");
   if (quizzes.length) {
-    const alive = [...r.state.players.values()].filter((p) => p.alive).length;
-    r.send("sceneEvent", { sceneId: "tA", eventId: "20304a", answer: String(alive) });
-    await waitFor(() => results.length > n2);
+    r.send("sceneEvent", { sceneId: "gym", eventId: "y152", answer: "2次" });
+    await waitFor(() => results.length > n + 5);
     res = results[results.length - 1];
-    check(res.grants.some((g) => g.ref === "关#3"), `答题正确获行政楼通行卡（存活 ${alive} 人）`);
+    check(res.grants.some((g) => g.name === "杠铃杆"), "y152 答对获得杠铃杆(关#2)");
+    check(me().coins === coins0 - 5, `体育馆入场费 5 币（${coins0}→${me().coins}）`);
   }
 
-  // 7) consume：先拿剪刀（20203b），再 20404a 应消耗剪刀并获得储物柜钥匙
-  r.send("sceneEvent", { sceneId: "tA", eventId: "20203b" });
-  await waitFor(() => results.length > n2 + 1 || results.length > results.length);
-  await sleep(400);
-  const hasScis = [...me().pack.keys()].includes("关#8");
-  check(hasScis, "20203b 获得剪刀(关#8)");
-  if (hasScis) {
-    const n3 = results.length;
-    r.send("sceneEvent", { sceneId: "tA", eventId: "20404a" });
-    await waitFor(() => results.length > n3);
+  // ===== 天数衰减 =====
+  const ok = await waitFor(() => r.state.day >= 1 && ["morning", "afternoon", "evening"].includes(r.state.phase), 300000, 300);
+  check(ok, `进入第 ${r.state.day} 天探索时段`);
+  if (ok) {
+    r.send("move", { nodeId: "tA" });
+    await waitFor(() => me().nodeId === "tA");
+    const san1 = me().san;
+    n = results.length;
+    r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
+    await waitFor(() => results.length > n);
     res = results[results.length - 1];
-    check(res.grants.some((g) => g.ref === "关#6"), "20404a 获得储物柜钥匙");
-    check(![...me().pack.keys()].includes("关#8"), "20404a 结算后剪刀已消耗");
+    const expect = Math.min(0, Math.floor(-6 - (r.state.day * -6) / 5));
+    check(res.states.san === expect && me().san === Math.max(0, san1 + expect),
+      `第${r.state.day}天 y004a SAN 标注-6 → 实扣 ${res.states.san}（期望 ${expect}）`);
   }
 
+  r.leave();
+  clearInterval(noonWatcher);
   console.log(failed ? "[tA-smoke] 存在未通过项" : "[tA-smoke] 全部通过 ✓");
   process.exit(failed ? 1 : 0);
 }

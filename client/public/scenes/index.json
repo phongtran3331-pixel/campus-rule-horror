@@ -2,7 +2,7 @@
  "gym": {
   "name": "体育馆",
   "situations": 8,
-  "events": 159
+  "events": 166
  },
  "recycle": {
   "name": "回收站",
@@ -42,7 +42,7 @@
  "tA": {
   "name": "教学楼A",
   "situations": 1,
-  "events": 216
+  "events": 102
  },
  "tB": {
   "name": "教学楼B",

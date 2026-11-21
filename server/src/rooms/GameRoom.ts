@@ -15,7 +15,7 @@ import {
 import { PRICES, rollLoot } from "../data/loot.js";
 import { exploreText, FOOD_NAMES, JUNK_NAMES, MEDICINE_NAMES, NPC, pick } from "../data/flavor.js";
 import { ITEM_CATALOG, rollTreasure } from "../data/items.js";
-import { loadScenes, loadWiki, loadShop, refToName, parseEvent, parseQuizBranch, type SceneData } from "../logic/SceneEngine.js";
+import { loadScenes, loadWiki, loadShop, refToName, parseEvent, parseQuizBranch, type SceneData, type StateDelta } from "../logic/SceneEngine.js";
 
 export interface JoinOptions {
   name?: string;
@@ -705,6 +705,7 @@ export class GameRoom extends Room<GameState> {
         states = branch.states;
         text = branch.text || (correct ? "回答正确。" : "回答错误。");
       }
+      states = this.scaleStatesByDay(states); // 展示与干事口径一致（虽不落库）
       client.send("sceneResult", {
         sceneId, eventId, taken: false, fake: false,
         op: parsed.op ?? null,
@@ -754,6 +755,9 @@ export class GameRoom extends Room<GameState> {
       text = branch.text || (side === "答对" ? "回答正确。" : "回答错误。");
     }
 
+    // 天数衰减：负向状态变化按天数减弱（AP 为行动成本不缩放），展示与实际结算一致
+    states = this.scaleStatesByDay(states);
+
     // 先到先得（含答题奖励）：判定后再查点位占用，领过即回空态文案
     if (grants.length && this.claimed.has(key)) {
       client.send("sceneResult", {
@@ -798,6 +802,17 @@ export class GameRoom extends Room<GameState> {
       states,
       text: text + foodNote,
     });
+  }
+
+  /**
+   * 天数衰减：负向状态变化随天数推移减弱，eff = min(0, floor(v - day*(v/5)))（向下取整、不为正）；
+   * 正向变化保持标注值；行动值（AP）属行动成本不缩放。
+   */
+  private scaleStatesByDay(states: StateDelta): StateDelta {
+    const day = this.state.day;
+    const scale = (v?: number): number | undefined =>
+      v == null || v >= 0 ? v : Math.min(0, Math.floor(v - (day * v) / 5));
+    return { ap: states.ap, hunger: scale(states.hunger), hp: scale(states.hp), san: scale(states.san) };
   }
 
   /** 进入场景内房间：干事 -1 AP（理事长免费）；成功后回 sceneEntered 供客户端切屏 */
