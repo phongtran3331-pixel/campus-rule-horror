@@ -22,13 +22,17 @@ createServer(async (req, res) => {
     const file = normalize(join(root, p));
     if (!file.startsWith(normalize(root))) { res.writeHead(403).end(); return; }
     const data = await readFile(file);
-    res.writeHead(200, { "content-type": MIME[extname(file)] || "application/octet-stream" });
+    // 缓存策略：HTML/JSON 不缓存（防 heuristic 缓存旧包）；指纹资源(index-哈希)长缓存；图片等 1 小时
+    const cc = file.endsWith(".html") || extname(file) === ".json" ? "no-cache"
+      : p.startsWith("/assets/index-") ? "public, max-age=31536000, immutable"
+      : "public, max-age=3600";
+    res.writeHead(200, { "content-type": MIME[extname(file)] || "application/octet-stream", "cache-control": cc });
     res.end(data);
   } catch {
     // SPA 回退：找不到就回 index.html（游戏内路由都是前端状态，无真实路径）
     try {
       const data = await readFile(join(root, "index.html"));
-      res.writeHead(200, { "content-type": MIME[".html"] });
+      res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" });
       res.end(data);
     } catch {
       res.writeHead(404).end("not found");
