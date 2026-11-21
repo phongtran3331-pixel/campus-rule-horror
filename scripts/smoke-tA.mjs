@@ -46,6 +46,7 @@ async function main() {
   let n = results.length;
   await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y001c" });
   await waitFor(() => results.length > n);
+  await waitFor(() => me().san === san0 - 6, 5000, 100); // 等状态同步到达再断言
   let res = results[results.length - 1];
   check(res.states.san === -6 && me().san === san0 - 6, `第0天 y001c SAN 标注-6 实扣-6（${san0}→${me().san}）`);
 

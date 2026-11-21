@@ -46,6 +46,7 @@ async function main() {
   let n = results.length;
   await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y001c" });
   await waitFor(() => results.length > n);
+  await waitFor(() => me().san === san0 - 6, 5000, 100); // 等状态同步到达再断言
   let res = results[results.length - 1];
   check(res.states.san === -6 && me().san === san0 - 6, `第0天 y001c SAN 标注-6 实扣-6（${san0}→${me().san}）`);
 
@@ -99,7 +100,7 @@ async function main() {
     await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
     await waitFor(() => results.length > n);
     res = results[results.length - 1];
-    const expect = Math.min(0, Math.floor(-6 - (r.state.day * -6) / 5));
+    const expect = -6 - r.state.day * Math.floor(6 / 5); // 负向随天数加重：-6→第1天-7
     check(res.states.san === expect && me().san === Math.max(0, san1 + expect),
       `第${r.state.day}天 y004a SAN 标注-6 → 实扣 ${res.states.san}（期望 ${expect}，san1=${san1} 后=${me().san}）`);
   }
