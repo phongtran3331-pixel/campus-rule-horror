@@ -36,6 +36,8 @@ async function main() {
   const waitExplore = async () => {
     await waitFor(() => ["morning", "afternoon", "evening"].includes(r.state.phase), 90000, 100);
   };
+  // 状态补丁比 sceneResult 消息晚到：断言 state 数值前先等一小段
+  const settle = (ms = 800) => new Promise((r) => setTimeout(r, ms));
 
   // ===== 教学楼A 新结构 =====
   r.send("move", { nodeId: "tA" });
@@ -49,12 +51,14 @@ async function main() {
   await waitFor(() => me().san === san0 - 6, 5000, 100); // 等状态同步到达再断言
   let res = results[results.length - 1];
   check(res.states.san === -6 && me().san === san0 - 6, `第0天 y001c SAN 标注-6 实扣-6（${san0}→${me().san}）`);
+  check(!("ap" in res.states) && !("hp" in res.states), `states 不含 undefined 键（keys=${JSON.stringify(Object.keys(res.states))}）`);
 
   // 2) 深度探索：y002b1 得旧课本且 AP-1
   const ap0 = me().ap;
   n = results.length;
   await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y002b1" });
   await waitFor(() => results.length > n);
+  await settle();
   res = results[results.length - 1];
   check(res.grants.some((g) => g.ref === "普#4") && me().ap === ap0 - 1,
     `y002b1 深度探索得旧课本且 AP-1（ap0=${ap0} 后=${me().ap} grants=${JSON.stringify(res.grants)} ev=${res.eventId}）`);
@@ -84,6 +88,7 @@ async function main() {
   if (quizzes.length) {
     await waitExplore(); r.send("sceneEvent", { sceneId: "gym", eventId: "y152", answer: "2次" });
     await waitFor(() => results.length > n + 5);
+    await settle();
     res = results[results.length - 1];
     check(res.grants.some((g) => g.name === "杠铃杆"), "y152 答对获得杠铃杆(关#2)");
     check(me().coins === coins0 - 5, `体育馆入场费 5 币（${coins0}→${me().coins}）`);
@@ -99,6 +104,7 @@ async function main() {
     n = results.length;
     await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
     await waitFor(() => results.length > n);
+    await settle();
     res = results[results.length - 1];
     const expect = -6 - r.state.day * Math.floor(6 / 5); // 负向随天数加重：-6→第1天-7
     check(res.states.san === expect && me().san === Math.max(0, san1 + expect),
