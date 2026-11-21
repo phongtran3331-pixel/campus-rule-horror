@@ -812,7 +812,13 @@ export class GameRoom extends Room<GameState> {
     const day = this.state.day;
     const scale = (v?: number): number | undefined =>
       v == null || v >= 0 ? v : v - day * Math.floor(Math.abs(v) / 5);
-    return { ap: states.ap, hunger: scale(states.hunger), hp: scale(states.hp), san: scale(states.san) };
+    const out: StateDelta = {};
+    // 只带实际存在的状态键：msgpack 会把 undefined 编码为键保留、值为 undefined，客户端小字会显示 "xxx undefined"
+    if (states.ap != null) out.ap = states.ap;
+    if (states.hunger != null) out.hunger = scale(states.hunger);
+    if (states.hp != null) out.hp = scale(states.hp);
+    if (states.san != null) out.san = scale(states.san);
+    return out;
   }
 
   /** 进入场景内房间：干事 -1 AP（理事长免费）；成功后回 sceneEntered 供客户端切屏 */

@@ -80,8 +80,10 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         setText({
           main: r.text,
           grants: r.grants.length ? r.grants.map((g) => g.name) : undefined,
-          states: Object.keys(r.states).length
-            ? Object.entries(r.states).map(([k, v]) => `${STATE_CN[k]} ${v > 0 ? "+" : ""}${v}`)
+          states: Object.entries(r.states).filter(([k, v]) => typeof v === "number" && STATE_CN[k]).length
+            ? Object.entries(r.states)
+                .filter(([k, v]) => typeof v === "number" && STATE_CN[k])
+                .map(([k, v]) => `${STATE_CN[k]} ${v > 0 ? "+" : ""}${v}`)
             : undefined,
           fake: r.fake || undefined,
           taken: r.taken || undefined,
