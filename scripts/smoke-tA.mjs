@@ -99,7 +99,7 @@ async function main() {
     await waitExplore(); r.send("sceneEvent", { sceneId: "tA", eventId: "y004a" });
     await waitFor(() => results.length > n);
     res = results[results.length - 1];
-    const expect = Math.min(0, Math.floor(-6 - (r.state.day * -6) / 5));
+    const expect = -6 - r.state.day * Math.floor(6 / 5); // 负向随天数加重：-6→第1天-7
     check(res.states.san === expect && me().san === Math.max(0, san1 + expect),
       `第${r.state.day}天 y004a SAN 标注-6 → 实扣 ${res.states.san}（期望 ${expect}，san1=${san1} 后=${me().san}）`);
   }

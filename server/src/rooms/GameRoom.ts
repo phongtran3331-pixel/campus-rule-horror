@@ -755,7 +755,7 @@ export class GameRoom extends Room<GameState> {
       text = branch.text || (side === "答对" ? "回答正确。" : "回答错误。");
     }
 
-    // 天数衰减：负向状态变化按天数减弱（AP 为行动成本不缩放），展示与实际结算一致
+    // 天数衰减：负向状态变化按天数加重（AP 为行动成本不缩放），展示与实际结算一致
     states = this.scaleStatesByDay(states);
 
     // 先到先得（含答题奖励）：判定后再查点位占用，领过即回空态文案
@@ -805,13 +805,13 @@ export class GameRoom extends Room<GameState> {
   }
 
   /**
-   * 天数衰减：负向状态变化随天数推移减弱，eff = min(0, floor(v - day*(v/5)))（向下取整、不为正）；
-   * 正向变化保持标注值；行动值（AP）属行动成本不缩放。
+   * 天数衰减：负向状态变化随天数推移加重，每天增加 |v|/5（截断取整），eff = v - day*trunc(|v|/5)；
+   * 例：标注 -6，第 1 天 -7、第 2 天 -8；正向变化保持标注值；行动值（AP）属行动成本不缩放。
    */
   private scaleStatesByDay(states: StateDelta): StateDelta {
     const day = this.state.day;
     const scale = (v?: number): number | undefined =>
-      v == null || v >= 0 ? v : Math.min(0, Math.floor(v - (day * v) / 5));
+      v == null || v >= 0 ? v : v - day * Math.floor(Math.abs(v) / 5);
     return { ap: states.ap, hunger: scale(states.hunger), hp: scale(states.hp), san: scale(states.san) };
   }
 
