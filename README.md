@@ -14,7 +14,7 @@
 npm install        # 首次
 npm run dev        # 服务端 ws://localhost:2567 + 客户端 http://localhost:7100
 npm run typecheck  # 两端类型检查
-node scripts/smoke.mjs  # 端到端冒烟（需服务端已启动）
+node scripts/smoke-rules.mjs  # 端到端冒烟（需服务端已启动；另有 solo/lunch/shop/gate/recycle/community/keys/tA/multi 九个专项脚本）
 ```
 
 - 创建房间后把**邀请码**（即房间 ID）发给好友即可加入；勾选"测试加速 ×30"用于开发调试。

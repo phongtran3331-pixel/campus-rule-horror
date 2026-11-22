@@ -27,6 +27,7 @@ export interface JoinOptions {
   debug?: boolean; // 调试房：房主可无视人数直接开局
   solo?: boolean;        // 单人试玩：跳过匹配直接开局，空位由挂机玩家补齐
   soloFaction?: "student" | "chair"; // 单人试玩自选身份
+  forceBoard?: string[]; // 仅调试房：强制上板的随机规则 id（便于规则测试，正式局忽略）
 }
 
 const DAY_TOTAL = 4; // 0..4，Day4 中午终投后直接结算
@@ -43,10 +44,13 @@ export class GameRoom extends Room<GameState> {
   private timeScale = 1;
   private debugMode = false; // 调试房：房主可直接开局
   private soloFaction: Faction | null = null; // 单人试玩身份（null = 正常对局）
+  private forceBoard: string[] | null = null;   // 调试房强制上板规则 id
 
   // ---------- 服务端私有数据（规则引擎状态，均不同步） ----------
   private factionOf = new Map<string, Faction>();          // 阵营（机密）
   private recs = new Map<string, DayRecord>();             // 每人当日行为记录
+  // 违规保护期：同一玩家对同一条规则违规后 30 秒内不再重复判（避免连续触发卡死/刷弹药）
+  private violCooldown = new Map<string, number>();        // key = `${id}:${ruleId}` → 上次违规时间戳
   private prevNode = new Map<string, string>();            // 每人上一节点（R2）
   // 图书馆闸机：实际通行日志（enter/leave 独立记录，永久保留，不可篡改；传送不计）
   private gateLog: Array<{ id: string; day: number; action: "enter" | "leave"; t: string; seq: number }> = [];
@@ -120,6 +124,7 @@ export class GameRoom extends Room<GameState> {
     }
     this.timeScale = options.timeScale ?? 1;
     this.debugMode = !!options.debug;
+    if (Array.isArray(options.forceBoard)) this.forceBoard = options.forceBoard.map(String);
     if (options.solo && (options.soloFaction === "chair" || options.soloFaction === "student")) {
       this.soloFaction = options.soloFaction;
       this.debugMode = true; // 单人必为调试房：允许直接开局
@@ -317,7 +322,9 @@ export class GameRoom extends Room<GameState> {
       shuffled.forEach((id, i) => this.factionOf.set(id, i < nChair ? "chair" : "student"));
     }
 
-    const { board, pool } = drawRuleBoard();
+    // 调试房可强制上板规则（测试用）；正式局随机抽板
+    const forced = this.debugMode && Array.isArray(this.forceBoard) ? this.forceBoard : null;
+    const { board, pool } = drawRuleBoard(forced);
     this.board = board;
     this.pool = pool;
     this.broadcast("init", {
@@ -382,6 +389,7 @@ export class GameRoom extends Room<GameState> {
 
   private enterPhase(phase: Phase, day: number) {
     this.state.phase = phase;
+    this.violCooldown.clear(); // 违规保护期按时段清零：每个时段重新计 30 秒
     this.state.phaseStartedAt = Date.now();
     this.state.phaseEndsAt = this.timer.start(phase, day, () => this.onPhaseEnd(phase, day));
     this.broadcast("phase", { phase, day, endsAt: this.state.phaseEndsAt });
@@ -404,6 +412,10 @@ export class GameRoom extends Room<GameState> {
         for (const [k, v] of [...this.state.shopPrices.entries()]) this.state.shopPrices.set(k, nextPrice(v));
         for (const [k, v] of [...this.state.shopStock.entries()]) this.state.shopStock.set(k, Math.min(SHOP_STOCK_MAX, v + SHOP_RESTOCK));
       }
+    }
+    if (phase === "afternoon") {
+      // R8 按时段独立计数：进入下午时清零发言数与通报标记
+      this.recs.forEach((rec) => { rec.chats = 0; rec.r8Fired = false; });
     }
     if (phase === "noon") {
       this.noonDone.clear();
@@ -458,8 +470,8 @@ export class GameRoom extends Room<GameState> {
   private onPhaseEnd(phase: Phase, day: number) {
     if (this.state.phase === "ended") return;
 
-    // 时段结束类违规判定（noon/evening，针对干事）
-    if (phase === "noon" || phase === "evening") {
+    // 时段结束类违规判定（morning/noon/evening，针对干事）
+    if (phase === "morning" || phase === "noon" || phase === "evening") {
       for (const id of this.aliveIds()) {
         if (this.factionOf.get(id) !== "student") continue;
         const ctx = this.makeCtx(id);
@@ -1741,13 +1753,17 @@ export class GameRoom extends Room<GameState> {
   /** 干事动作 → 逐条生效规则判定；理事长免疫校规（其动作不触发任何判定） */
   private runChecks(id: string, action: Action) {
     if (this.factionOf.get(id) !== "student") return;
+    // 发言计数在规则循环外执行一次（R8 按次结算，避免按规则条数重复计数）
+    if (action.type === "chat") {
+      const rec = this.recs.get(id);
+      if (rec) rec.chats++;
+    }
     const ctx = this.makeCtx(id);
     for (const ruleId of this.activeRuleIds()) {
       let hit = false;
       if (action.type === "chat") {
-        // R8 单独计数：第 9 条起违规，每时段只通报一次
+        // R8：第 9 条起违规，每时段只通报一次
         const rec = this.recs.get(id)!;
-        rec.chats++;
         if (ruleId === "R8" && rec.chats > 8 && !rec.r8Fired) {
           rec.r8Fired = true;
           hit = true;
@@ -1764,13 +1780,20 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
-  /** 记违规：匿名通报（不显示哪一条），干事违规事件数 = 夜间弹药 */
+  /** 记违规：校园墙匿名通报（不显示是谁、哪一条）；干事违规事件数 = 夜间弹药；30 秒保护期防重复 */
   private violate(id: string, ruleId: string) {
     if (this.factionOf.get(id) !== "student") return;
+    const p0 = this.state.players.get(id);
+    if (!p0 || !p0.connected) return; // 挂机/断线玩家不产生违规（不刷弹药、不刷屏）
+    const key = `${id}:${ruleId}`;
+    const now = Date.now();
+    const last = this.violCooldown.get(key) ?? 0;
+    if (now - last < 30_000) return; // 保护期内：不记录、不通报、不扣罚
+    this.violCooldown.set(key, now);
     const rec = this.recs.get(id);
     rec?.violations.push(ruleId);
     this.todayViolationEvents++;
-    this.broadcast("notice", { text: "【通报】一名学生违反了校规。" });
+    this.broadcast("notice", { text: "【校园墙·通报】有学生违反了校规。" });
     const pen = INSTANT_PENALTY[ruleId];
     if (pen) {
       const p = this.state.players.get(id)!;

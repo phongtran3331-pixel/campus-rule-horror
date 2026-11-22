@@ -130,14 +130,17 @@ export function checkAction(ruleId: string, action: Action, ctx: EngineCtx): boo
 
 /**
  * 时段结束判定：返回 me 在 phase 结束时因"停留状态/未完成义务"违规的规则 id 列表。
- * 由 GameRoom 在 noon / evening 结束时对每个干事调用。
+ * 由 GameRoom 在 morning / noon / evening 结束时对每个干事调用。
  */
 export function phaseEndViolations(ctx: EngineCtx): string[] {
   const m = me(ctx);
   const out: string[] = [];
   switch (ctx.phase) {
+    case "morning":
+      if (m.nodeId === DORM) out.push("F1");        // 上午清空宿舍：11:00 人还在宿舍即违规
+      break;
     case "noon":
-      if (!ctx.rec.voted) out.push("F8");            // 禁止空票
+      if (ctx.day >= 1 && !ctx.rec.voted) out.push("F8"); // 禁止空票（第 0 日不投票，不判）
       if (m.nodeId === "library") out.push("R4");    // 午间闭馆停留
       break;
     case "evening":
