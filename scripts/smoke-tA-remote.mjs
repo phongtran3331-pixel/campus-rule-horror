@@ -25,7 +25,8 @@ async function main() {
   // 中午时段不计时：进入 noon 自动确认（第1天起还需投票），保证昼夜循环推进
   const noonWatcher = setInterval(() => {
     if (r.state.phase === "noon") {
-      r.send("noonDone");
+      if (!r.state.players.get(r.sessionId)?.lunchDone) r.send("lunch", { eat: true });
+      else r.send("noonDone");
       if (r.state.day >= 1) {
         const other = [...r.state.players.keys()].find((id) => id !== r.sessionId);
         if (other) r.send("vote", { targetId: other });

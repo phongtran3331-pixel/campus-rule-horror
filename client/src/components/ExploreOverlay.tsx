@@ -3,6 +3,7 @@ import type { Player } from "../../../server/src/schema/GameState";
 import type { Faction, GameRoom, RoomInit } from "../lib/client";
 import { MapView } from "./MapView";
 import { SceneView } from "./SceneView";
+import { TradePanel } from "./TradePanel";
 
 interface Props {
   room: GameRoom;
@@ -151,6 +152,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
   const at = node.id;
   const [imgOk, setImgOk] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
+  const [tradeOpen, setTradeOpen] = useState(false);
   return (
     <div className="eo-card eo-node eo-node-full">
       <div className="eo-node-head">
@@ -177,10 +179,7 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
       <div className="row wrap eo-actions">
         {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
         {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
-        {at === "market" && <Btn label="买食物（5币）" onClick={() => send("buy", { item: "food" })} />}
-        {at === "market" && <Btn label="买剪刀（15币）" onClick={() => send("buy", { item: "scissors" })} />}
-        {at === "clinic" && <Btn label="买药（12币）" onClick={() => send("buyMedicine")} />}
-        {at === "canteen" && phase === "noon" && <Btn label="午间套餐（3币）" onClick={() => send("meal")} />}
+        {(at === "market" || at === "clinic") && <Btn label="🛒 交易" onClick={() => setTradeOpen(true)} />}
         {(at === "field" || at === "gym") && <Btn label="运动" onClick={() => send("exercise")} />}
         {at === "recycle" && me.junk > 0 && <Btn label={`卖杂物（🗑${me.junk}）`} onClick={() => send("recycle")} />}
         {at === "admin" && (
@@ -200,6 +199,9 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
         )}
         {at === "community" && <p className="eo-warn">学生社区的功能在终端「校园预约」中。</p>}
       </div>
+      {tradeOpen && (at === "market" || at === "clinic") && (
+        <TradePanel room={room} me={me} shop={at} onClose={() => setTradeOpen(false)} />
+      )}
     </div>
   );
 }

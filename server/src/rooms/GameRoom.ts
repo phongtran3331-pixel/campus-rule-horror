@@ -16,6 +16,7 @@ import { PRICES, rollLoot } from "../data/loot.js";
 import { exploreText, FOOD_NAMES, JUNK_NAMES, MEDICINE_NAMES, NPC, pick } from "../data/flavor.js";
 import { ITEM_CATALOG, rollTreasure } from "../data/items.js";
 import { loadScenes, loadWiki, loadShop, refToName, parseEvent, parseQuizBranch, type SceneData, type StateDelta } from "../logic/SceneEngine.js";
+import { loadShops, goodsKey, nextPrice, SHOP_NODE, SHOP_STOCK_INIT, SHOP_STOCK_MAX, SHOP_RESTOCK, type ShopKey } from "../data/shop.js";
 
 export interface JoinOptions {
   name?: string;
@@ -71,6 +72,7 @@ export class GameRoom extends Room<GameState> {
   private scenes: Record<string, SceneData> = loadScenes();
   private wiki = loadWiki();
   private shop = loadShop(this.wiki, this.scenes);
+  private shops = loadShops();
   private refName = refToName(this.wiki);
   // 关段物品 wiki 无编号，按条目顺序补 关#1..N 映射（与 keyStock 同一口径）
   private segRefName = (() => {
@@ -103,6 +105,13 @@ export class GameRoom extends Room<GameState> {
 
   onCreate(options: JoinOptions) {
     this.setState(new GameState());
+    // 商店初始价与全局库存（第 1 日 = 标价）
+    for (const [shop, def] of Object.entries(this.shops)) {
+      for (const g of def.goods) {
+        this.state.shopPrices.set(`${shop}:${goodsKey(g)}`, g.base);
+        this.state.shopStock.set(`${shop}:${goodsKey(g)}`, SHOP_STOCK_INIT);
+      }
+    }
     this.timeScale = options.timeScale ?? 1;
     this.debugMode = !!options.debug;
     if (options.solo && (options.soloFaction === "chair" || options.soloFaction === "student")) {
@@ -143,10 +152,10 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("packRecycle", (client, msg: { refs?: string[] }) => this.onPackRecycle(client, msg));
     this.onMessage("packDrop", (client, msg: { refs?: string[] }) => this.onPackDrop(client, msg));
     this.onMessage("usePack", (client, msg: { ref?: string }) => this.onUsePack(client, msg));
-    this.onMessage("buy", (client, msg: { item?: string }) => this.onBuy(client, msg));
     this.onMessage("buyMedicine", (client) => this.onBuyMedicine(client));
     this.onMessage("useMedicine", (client, msg: { kind?: string }) => this.onUseMedicine(client, msg));
-    this.onMessage("meal", (client) => this.onMeal(client));
+    // 超市 / 药房交易面板（shop.json 货表 + 每日涨价 + 全局库存）
+    this.onMessage("shopBuy", (client, msg: { shop?: string; key?: string }) => this.onShopBuy(client, msg));
     this.onMessage("recycle", (client) => this.onRecycle(client));
     // M3：学生社区（预约制 + 四房间）
     this.onMessage("bookSlot", (client, msg: { slot?: string }) => this.onBookSlot(client, msg));
@@ -201,6 +210,7 @@ export class GameRoom extends Room<GameState> {
       }
     } else if (p) {
       p.connected = false; // 游戏中掉线保留角色
+      this.maybeEndLunch(); // 掉线者不再阻塞午餐询问
       // 非主动离开（掉线/刷新）给 120 秒重连窗口，重连即恢复原角色
       if (!consented && p.alive) {
         this.allowReconnection(client, 120)
@@ -339,9 +349,15 @@ export class GameRoom extends Room<GameState> {
       this.bookings.delete(day - 2);              // 预约记录保留到次日供社区部查询，之后清理
       this.visits.clear();                        // dynamic_visit 每日重置
       this.recycleBatch.clear();                  // 回收站批次数每日重置
+      // 商店逐日累积随机涨价 8%–18%（当日全局统一）+ 少量补货
+      if (day >= 1) {
+        for (const [k, v] of [...this.state.shopPrices.entries()]) this.state.shopPrices.set(k, nextPrice(v));
+        for (const [k, v] of [...this.state.shopStock.entries()]) this.state.shopStock.set(k, Math.min(SHOP_STOCK_MAX, v + SHOP_RESTOCK));
+      }
     }
     if (phase === "noon") {
       this.noonDone.clear();
+      this.state.lunchOpen = true;
       // 集体自动前往食堂（不消耗 AP）；主持人留观
       this.state.players.forEach((p, pid) => {
         if (!p.alive || p.observer) return;
@@ -352,11 +368,7 @@ export class GameRoom extends Room<GameState> {
         if (!v) { v = new Set(); this.visits.set("canteen", v); }
         v.add(pid);
       });
-      this.broadcast("notice", {
-        text: day === 0
-          ? "午间讨论开始（第 0 日不投票）。讨论不计时——全员确认后时间进入 14:00。"
-          : "午间讨论开始。讨论不计时——全员投票后时间进入 14:00。",
-      });
+      this.broadcast("notice", { text: "十一点整。所有人都停下了手里的事，朝食堂走去。" });
     }
     if (phase === "evening") {
       // 社区清场：下午段结束，非理事长留在社区的被请回宿舍
@@ -590,16 +602,24 @@ export class GameRoom extends Room<GameState> {
     return out;
   }
 
-  /** 食堂午餐结算：noon 期间随时可选，不阻塞讨论推进；每人每天一次 */
+  /** 食堂午餐结算：noon 开始即全员询问；全员选完才进入讨论。每人每天一次 */
   private onLunch(client: Client, msg: { eat?: boolean }) {
-    if (this.state.phase !== "noon") return;
+    if (this.state.phase !== "noon" || !this.state.lunchOpen) return;
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.observer || p.lunchDone) return;
+    const isChair = this.factionOf.get(client.sessionId) === "chair";
     p.lunchDone = true;
     const eat = msg?.eat !== false;
+    // 理事长同款演出，结算不落库（窥屏不可分辨）
+    if (isChair) {
+      this.sendNoticeTo(client.sessionId, eat
+        ? "午餐下肚：饥饿 +30。"
+        : "你拒绝了今天的午餐。");
+      this.maybeEndLunch();
+      return;
+    }
     if (eat) {
       if (p.coins < 10) {
-        // 余额不足无法购买，按拒绝处理（但不吃保底 SAN 惩罚之外的差额）
         p.lunchDone = false;
         this.sendNoticeTo(client.sessionId, "代币不足 10，打饭窗口的阿姨摆了摆手。");
         return;
@@ -619,8 +639,9 @@ export class GameRoom extends Room<GameState> {
         parts.push("邻桌的人一直在看你。（SAN 下降）");
       }
       this.sendNoticeTo(client.sessionId, parts.join(""));
-      if (p.hp <= 0) this.eliminate(client.sessionId, "食堂午餐");
-      else if (p.san <= 0) this.eliminate(client.sessionId, "精神崩溃");
+      if (p.hp <= 0) { this.eliminate(client.sessionId, "食堂午餐"); this.maybeEndLunch(); return; }
+      if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); this.maybeEndLunch(); return; }
+      this.maybeEndLunch();
       return;
     }
     // 拒绝午餐
@@ -635,11 +656,27 @@ export class GameRoom extends Room<GameState> {
     } else {
       this.sendNoticeTo(client.sessionId, "你拒绝了今天的午餐。");
     }
-    if (p.san <= 0) this.eliminate(client.sessionId, "精神崩溃");
+    if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); }
+    this.maybeEndLunch();
+  }
+
+  /** 全员选完午餐 → 关闭询问，开放讨论/投票 */
+  private maybeEndLunch() {
+    const all = this.aliveConnected();
+    if (!all.length) return;
+    if (all.every((id) => this.state.players.get(id)?.lunchDone)) {
+      this.state.lunchOpen = false;
+      this.broadcast("notice", {
+        text: this.state.day === 0
+          ? "餐盘收进后厨。午间讨论开始（第 0 日不投票）——全员确认后时间进入 14:00。"
+          : "餐盘收进后厨。午间讨论开始——全员投票后时间进入 14:00。",
+      });
+    }
   }
 
   /** 午间确认：第 0 日不投票，全员确认后跳入 14:00；第 1 日起由投票收束（见 onVote） */
-  private onNoonDone(client: Client) {    if (this.state.phase !== "noon") return;
+  private onNoonDone(client: Client) {
+    if (this.state.phase !== "noon" || this.state.lunchOpen) return;
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.observer || !p.connected || this.state.day !== 0) return;
     this.noonDone.add(client.sessionId);
@@ -651,7 +688,7 @@ export class GameRoom extends Room<GameState> {
   private onVote(client: Client, msg: { targetId?: string }) {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.observer) return;
-    if (this.state.phase !== "noon" || this.state.day === 0) return;
+    if (this.state.phase !== "noon" || this.state.day === 0 || this.state.lunchOpen) return;
     const targetId = String(msg?.targetId ?? "");
     const t = this.state.players.get(targetId);
     if (!t || !t.alive || targetId === client.sessionId) {
@@ -818,8 +855,7 @@ export class GameRoom extends Room<GameState> {
     if (process.env.SMOKE_DEBUG) console.log(`[scene] ${id} ${sceneId}/${eventId} node=${p?.nodeId} phase=${this.state.phase} ev=${!!ev} alive=${p?.alive}`);
     if (!p || !p.alive || p.observer) return;
     if (p.nodeId !== sceneId) return;
-    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
-      || (sceneId === "canteen" && this.state.phase === "noon");
+    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase);
     if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
     const isChair = this.factionOf.get(id) === "chair";
 
@@ -1024,8 +1060,7 @@ export class GameRoom extends Room<GameState> {
     const room = String(msg?.room ?? "");
     if (!p || !p.alive || p.observer || p.nodeId !== sceneId) return;
     if (!this.scenes[sceneId]?.rooms?.[room]) return;
-    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
-      || (sceneId === "canteen" && this.state.phase === "noon");
+    const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase);
     if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
     // 社区四部门门：钥匙一次性消耗、全局永久解锁；理事长可进入但不消耗
     if (sceneId === "community" && GameRoom.DEPT_ROOMS.includes(room) && this.factionOf.get(id) !== "chair") {
@@ -1210,25 +1245,6 @@ export class GameRoom extends Room<GameState> {
     return Number(answer) === actual;
   }
 
-  /** 超市：食物 5 币 / 剪刀 15 币（库存无限；理事长假装购买，币与库存都不动） */
-  private onBuy(client: Client, msg: { item?: string }) {
-    const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive || p.nodeId !== "market") return;
-    const item = String(msg?.item ?? "");
-    const price = item === "food" ? PRICES.food : item === "scissors" ? PRICES.scissors : 0;
-    if (!price) return;
-    if (this.factionOf.get(client.sessionId) === "chair") {
-      // 与干事同一表现：提示语一致，币与货都不实际变动（货币清零仍可购买）
-      this.sendNoticeTo(client.sessionId, `${pick(NPC.marketBoss)}\n买到了${item === "food" ? pick(FOOD_NAMES) : "剪刀"}（-${price} 币）。`);
-      return;
-    }
-    if (p.coins < price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${price} 币）。`); return; }
-    p.coins -= price;
-    if (item === "food") p.food += 1; else p.scissors += 1;
-    this.log("超市售货机", `${item === "food" ? "食品" : "工具"} ×1`);
-    this.sendNoticeTo(client.sessionId, `${pick(NPC.marketBoss)}\n买到了${item === "food" ? pick(FOOD_NAMES) : "剪刀"}（-${price} 币）。`);
-  }
-
   /** 校医院：药物 12 币（理事长假装购买） */
   private onBuyMedicine(client: Client) {
     const p = this.state.players.get(client.sessionId);
@@ -1258,21 +1274,34 @@ export class GameRoom extends Room<GameState> {
     this.sendNoticeTo(client.sessionId, kind === "hp" ? "服药后 HP +30。" : "服药后 SAN +20。");
   }
 
-  /** 食堂午间套餐（仅中午、人在食堂）：+40 饥饿，20% 概率食物有问题 */
-  private onMeal(client: Client) {
+  /** 超市 / 药房交易面板购买：当日全局统一价、全局库存；理事长同款演出不落库 */
+  private onShopBuy(client: Client, msg: { shop?: string; key?: string }) {
     const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive || this.state.phase !== "noon" || p.nodeId !== "canteen") return;
+    if (!p || !p.alive || p.observer) return;
+    const shop = String(msg?.shop ?? "") as ShopKey;
+    const def = this.shops[shop];
+    if (!def || p.nodeId !== SHOP_NODE[shop]) { this.sendNoticeTo(client.sessionId, "不在这里，买不到。"); return; }
+    if (this.state.phase === "lobby" || this.state.phase === "ready") return;
+    const key = String(msg?.key ?? "");
+    const goods = def.goods.find((g) => goodsKey(g) === key);
+    if (!goods) return;
+    const fullKey = `${shop}:${key}`;
+    const price = this.state.shopPrices.get(fullKey) ?? goods.base;
+    const stock = this.state.shopStock.get(fullKey) ?? 0;
+    const seller = NPC[def.npc as keyof typeof NPC];
     if (this.factionOf.get(client.sessionId) === "chair") {
-      this.sendNoticeTo(client.sessionId, "你端着餐盘转了一圈，放回去了。今天的菜色你都看过了。");
+      // 与干事同一表现：提示语一致，币与库存都不实际变动（货币清零仍可购买）
+      this.sendNoticeTo(client.sessionId, `${pick(seller)}\n买到了${goods.name}（-${price} 币），已入背包。`);
       return;
     }
-    if (p.coins < PRICES.meal) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${PRICES.meal} 币）。`); return; }
-    p.coins -= PRICES.meal;
-    p.hunger = Math.min(100, p.hunger + 40);
-    let extra = "";
-    if (Math.random() < 0.2) { p.hp = Math.max(0, p.hp - 10); p.san = Math.max(0, p.san - 10); extra = " 但今天的菜有点不对劲……（HP -10，SAN -10）"; }
-    this.sendNoticeTo(client.sessionId, `${pick(NPC.canteenAunt)}\n吃了午间套餐：饥饿 +40（现 ${Math.round(p.hunger)}）。${extra}`);
-    if (p.hp <= 0) this.eliminate(client.sessionId, "食物中毒");
+    if (stock <= 0) { this.sendNoticeTo(client.sessionId, `${goods.name}卖完了。明天也许会补货。`); return; }
+    if (p.coins < price) { this.sendNoticeTo(client.sessionId, `钱不够（需 ${price} 币）。`); return; }
+    p.coins -= price;
+    this.state.shopStock.set(fullKey, stock - 1);
+    if (goods.kind === "field:scissors") p.scissors += 1;
+    else if (goods.ref) p.pack.set(goods.ref, (p.pack.get(goods.ref) ?? 0) + 1);
+    this.log(def.title, `购买 ${goods.name}`);
+    this.sendNoticeTo(client.sessionId, `${pick(seller)}\n买到了${goods.name}（-${price} 币），已入背包。`);
   }
 
   /** 回收站：杂物全部变现 */

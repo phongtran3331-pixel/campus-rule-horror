@@ -3,6 +3,7 @@ import type { Player } from "../../../server/src/schema/GameState";
 import { ITEM_CATALOG, type ItemDef } from "../../../server/src/data/items";
 import type { AccuseStateMsg, Faction, GameRoom, RoomInit, RuleMsg } from "../lib/client";
 import { virtualClock } from "../lib/vtime";
+import { LunchGate } from "./LunchGate";
 
 interface Msg { kind: string; from?: string; text: string }
 
@@ -59,7 +60,7 @@ export function Terminal(props: Props) {
     return () => clearInterval(t);
   }, []);
 
-  const { me, phase, day, endsAt, startedAt, nodeName } = props;
+  const { me, phase, day, endsAt, startedAt, nodeName, room, players } = props;
   const remain = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
   const clock = `${String(Math.floor(remain / 60)).padStart(2, "0")}:${String(remain % 60).padStart(2, "0")}`;
   const vtime = virtualClock({ phase: phase as never, phaseStartedAt: startedAt, phaseEndsAt: endsAt });
@@ -95,7 +96,7 @@ export function Terminal(props: Props) {
           <>
             <div className="t-clock">{endsAt > 0 && phase !== "lobby" ? clock : vtime}</div>
             {/* 阶段直达入口：当前最重要的事放桌面顶部 */}
-            {phase === "noon" && day > 0 && (
+            {phase === "noon" && !props.room.state.lunchOpen && day > 0 && (
               <button className="t-cta vote" onClick={() => setApp("explore")}>🗳️ 午间投票进行中 — 点我前往</button>
             )}
             {phase === "night" && props.myFaction === "chair" && (
@@ -124,6 +125,11 @@ export function Terminal(props: Props) {
           </div>
         )}
       </div>
+
+      {/* 午间氛围屏：全员传送食堂后的「吃，还是不吃」（全员选完才进入讨论） */}
+      {phase === "noon" && room.state.lunchOpen && me && me.alive && !me.observer && (
+        <LunchGate room={room} players={players} />
+      )}
     </div>
   );
 }
@@ -391,29 +397,6 @@ function NoonConfirm({ room }: { room: GameRoom }) {
   );
 }
 
-/** 食堂午餐面板：noon 期间随时可选，结算一次后不重复 */
-function LunchPanel({ room, me }: { room: GameRoom; me: Player }) {
-  const [busy, setBusy] = useState(false);
-  const choose = (eat: boolean) => {
-    setBusy(true);
-    room.send("lunch", { eat });
-  };
-  return (
-    <div className="vp">
-      <p className="vp-title">午餐时间</p>
-      <p className="vp-desc">今天的套餐 10 代币。吃，能填饱肚子；不吃，肚子会记住这件事。</p>
-      {!busy ? (
-        <div className="row wrap">
-          <button className="act" onClick={() => choose(true)}>使用午餐 · 10 币</button>
-          <Btn label="拒绝" onClick={() => choose(false)} />
-        </div>
-      ) : (
-        <p className="vp-done">已结算。</p>
-      )}
-    </div>
-  );
-}
-
 /** 理事长夜间面板：弹药状态 / 检举（两步确认）/ 换规（板上规则 ↔ 备选池） */
 function ChairPanel({ room, me, players, chairs, board, pool, accuse }: {
   room: GameRoom; me: Player;
@@ -630,13 +613,10 @@ function ExplorePanel({ p }: { p: Props }) {
       )}
       <Btn label="私聊 / 转账" onClick={() => setDmOpen((v) => !v)} />
       {dmOpen && <DmForm room={room} players={players} meId={room.sessionId} />}
-      {phase === "noon" && me && !me.observer && !me.lunchDone && (
-        <LunchPanel room={room} me={me} />
-      )}
-      {phase === "noon" && day === 0 && (
+      {phase === "noon" && !room.state.lunchOpen && day === 0 && (
         <NoonConfirm room={room} />
       )}
-      {phase === "noon" && day > 0 && (
+      {phase === "noon" && !room.state.lunchOpen && day > 0 && (
         <VotePanel room={room} me={me} players={players} chairs={chairs} />
       )}
       {phase === "night" && myFaction === "chair" && (

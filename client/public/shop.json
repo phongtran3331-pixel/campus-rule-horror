@@ -1,0 +1,45 @@
+{
+  "market": {
+    "title": "超市 · 售货机",
+    "npc": "marketBoss",
+    "goods": [
+      { "ref": "耗#1", "name": "未拆封的牛奶", "base": 35, "icon": "🥛" },
+      { "ref": "耗#20", "name": "薄荷糖", "base": 28, "icon": "🌿" },
+      { "ref": "耗#21", "name": "润喉糖", "base": 30, "icon": "🍬" },
+      { "ref": "耗#7", "name": "矿泉水", "base": 32, "icon": "💧" },
+      { "ref": "耗#8", "name": "巧克力", "base": 45, "icon": "🍫" },
+      { "ref": "耗#22", "name": "罐头", "base": 65, "icon": "🥫" },
+      { "ref": "耗#23", "name": "速溶咖啡", "base": 38, "icon": "☕" },
+      { "ref": "耗#24", "name": "茶叶包", "base": 30, "icon": "🍵" },
+      { "ref": "耗#10", "name": "维生素片", "base": 55, "icon": "💊" },
+      { "ref": "耗#12", "name": "消毒湿巾", "base": 48, "icon": "🧻" },
+      { "ref": "耗#13", "name": "暖宝宝", "base": 40, "icon": "🔥" },
+      { "ref": "耗#14", "name": "能量棒", "base": 42, "icon": "🥖" },
+      { "ref": "耗#15", "name": "口香糖", "base": 25, "icon": "🫧" },
+      { "ref": "耗#16", "name": "果冻", "base": 35, "icon": "🍮" },
+      { "ref": "耗#31", "name": "暖手宝", "base": 85, "icon": "🧤" },
+      { "kind": "field:scissors", "name": "剪刀", "base": 25, "icon": "✂️" }
+    ]
+  },
+  "clinic": {
+    "title": "校医院 · 药房",
+    "npc": "doctor",
+    "goods": [
+      { "ref": "耗#2", "name": "安神含片", "base": 75, "icon": "😴" },
+      { "ref": "耗#3", "name": "止痛药片", "base": 90, "icon": "💊" },
+      { "ref": "耗#25", "name": "润眼液", "base": 65, "icon": "👁" },
+      { "ref": "耗#5", "name": "绷带卷", "base": 100, "icon": "🩹" },
+      { "ref": "耗#26", "name": "创可贴", "base": 55, "icon": "🩹" },
+      { "ref": "耗#27", "name": "薄荷膏", "base": 50, "icon": "🌱" },
+      { "ref": "耗#9", "name": "感冒药", "base": 75, "icon": "🤧" },
+      { "ref": "耗#10", "name": "维生素片", "base": 65, "icon": "💊" },
+      { "ref": "耗#11", "name": "退烧贴", "base": 70, "icon": "🧊" },
+      { "ref": "耗#12", "name": "消毒湿巾", "base": 60, "icon": "🧻" },
+      { "ref": "耗#28", "name": "止血粉", "base": 110, "icon": "🩸" },
+      { "ref": "耗#29", "name": "晕车药", "base": 55, "icon": "🚌" },
+      { "ref": "耗#30", "name": "葡萄糖", "base": 85, "icon": "🍬" },
+      { "ref": "耗#17", "name": "碘伏棉签", "base": 65, "icon": "🧪" },
+      { "ref": "耗#18", "name": "口罩", "base": 45, "icon": "😷" }
+    ]
+  }
+}

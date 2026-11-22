@@ -43,10 +43,17 @@ async function roomA() {
 
   await waitNoon(r);
   check(me(r).nodeId === "canteen", "noon 开始自动传送食堂");
+  check(r.state.lunchOpen === true, "noon 开始即进入午餐询问（lunchOpen）");
+  // 讨论未开放：noonDone 被门控拒绝
+  r.send("noonDone");
+  await sleep(600);
+  check(r.state.phase === "noon" && r.state.lunchOpen === true, "全员选完前讨论不开放");
   const coins0 = me(r).coins, hunger0 = me(r).hunger, n0 = notices.length;
   r.send("lunch", { eat: true });
   await waitFor(() => notices.length > n0, 5000);
-  check(/午餐下肚/.test(notices[notices.length - 1] ?? ""), `用餐通知（${(notices[notices.length - 1] ?? "").slice(0, 30)}…）`);
+  await waitFor(() => r.state.lunchOpen === false, 5000);
+  check(r.state.lunchOpen === false, "全员选完午餐后开放讨论");
+  check(notices.slice(n0).some((t) => /午餐下肚/.test(t)), "收到个人午餐结算通知");
   await waitFor(() => me(r).coins === coins0 - 10, 5000);
   check(me(r).coins === coins0 - 10, `用餐扣 10 币（${coins0}→${me(r).coins}）`);
   check(me(r).hunger === Math.min(100, hunger0 + 40), `第 0 日饥饿封顶 100（${hunger0}→${me(r).hunger}）`);
@@ -86,6 +93,8 @@ async function roomB() {
   const san0 = me(r).san, coins0 = me(r).coins, n0 = notices.length;
   r.send("lunch", { eat: false });
   await waitFor(() => notices.length > n0, 5000);
+  await waitFor(() => r.state.lunchOpen === false, 5000);
+  check(r.state.lunchOpen === false, "拒绝午餐同样计入全员选择");
   await waitFor(() => me(r).san < san0, 5000);
   check(me(r).san < san0, `贫困拒绝 SAN 下降（${san0}→${me(r).san}）`);
   check(me(r).coins === coins0, "拒绝不扣币");

@@ -55,7 +55,9 @@ async function main() {
   const noonWatcher = setInterval(() => {
     for (const r of [...ps, obs]) {
       if (r.state.phase === "noon") {
-        r.send("noonDone");
+        // ps[0] 的午餐手动发送，保住「传送食堂」的检查窗口
+        if (r !== ps[0] && !r.state.players.get(r.sessionId)?.observer && !r.state.players.get(r.sessionId)?.lunchDone) r.send("lunch", { eat: true });
+        else if (r !== ps[0]) r.send("noonDone");
         if (r.state.day >= 1) {
           const others = [...r.state.players.keys()].filter((id) => id !== r.sessionId && !r.state.players.get(id)?.observer);
           if (others.length) r.send("vote", { targetId: others[0] });
@@ -65,9 +67,12 @@ async function main() {
   }, 200);
   const okNoon = await waitFor(() => obs.state.phase === "noon", 120000, 200);
   check(okNoon, "进入中午");
+  check(obs.state.lunchOpen === true, "noon 开始即进入午餐询问");
   await sleep(600);
   check(obs.state.players.get(ps[0].sessionId)?.nodeId === "canteen", "玩家午间传送食堂");
   check(obsMe()?.nodeId === "dorm", "观察者不被传送");
+  // 放行：ps[0] 也完成午餐，watcher 会收束正午
+  ps[0].send("lunch", { eat: true });
 
   for (const r of ps) r.leave();
   obs.leave();

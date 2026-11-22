@@ -29,7 +29,8 @@ async function main() {
   const me = () => r.state.players.get(r.sessionId);
   const noonWatcher = setInterval(() => {
     if (r.state.phase === "noon") {
-      r.send("noonDone");
+      if (!r.state.players.get(r.sessionId)?.lunchDone) r.send("lunch", { eat: true });
+      else r.send("noonDone");
       if (r.state.day >= 1) {
         const other = [...r.state.players.keys()].find((id) => id !== r.sessionId);
         if (other) r.send("vote", { targetId: other });

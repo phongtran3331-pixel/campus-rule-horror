@@ -57,7 +57,7 @@
  "clinic": {
   "name": "校医院",
   "situations": 1,
-  "events": 3
+  "events": 2
  },
  "admin": {
   "name": "行政楼",
@@ -67,11 +67,11 @@
  "market": {
   "name": "超市",
   "situations": 1,
-  "events": 6
+  "events": 4
  },
  "canteen": {
   "name": "食堂",
   "situations": 1,
-  "events": 5
+  "events": 0
  }
 }

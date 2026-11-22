@@ -39,5 +39,8 @@ export class GameState extends Schema {
   @type("number") phaseEndsAt = 0;            // epoch ms，0 = 未计时
   @type("number") phaseStartedAt = 0;         // 本时段开始 epoch ms（客户端换算虚拟时刻）
   @type("boolean") netDown = false;           // M4：网络中心被破坏，全员失去玩家位置视野
+  @type("boolean") lunchOpen = false;          // noon：午餐询问进行中，全员选完才进入讨论
+  @type({ map: "number" }) shopPrices = new MapSchema<number>(); // 「market:耗#1」→ 当日价
+  @type({ map: "number" }) shopStock = new MapSchema<number>();  // 「market:耗#1」→ 全局库存
   @type("string") rulesVersion = "v1.4";
 }

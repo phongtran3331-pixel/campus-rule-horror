@@ -40,7 +40,11 @@ async function main() {
 
   // 中午自动前往食堂（与正式一致的强制传送）
   check(await waitFor(() => stu.state.phase === "noon" && stu.state.players.get(stu.sessionId).nodeId === "canteen", 60000), "午间集体自动前往食堂");
-  // 第 0 日讨论不计时：单人确认即可进入 14:00（挂机玩家不在线，不计入确认）
+  // 第 0 日讨论不计时：先完成午餐询问，单人确认即可进入 14:00（挂机玩家不在线，不计入确认）
+  check(stu.state.lunchOpen === true, "noon 开始先进入午餐询问");
+  stu.send("lunch", { eat: true });
+  await waitFor(() => stu.state.lunchOpen === false, 5000);
+  check(stu.state.lunchOpen === false, "单人完成午餐后关闭询问");
   stu.send("noonDone");
 
   // 第 1 日午间投票：挂机玩家是合法票靶
