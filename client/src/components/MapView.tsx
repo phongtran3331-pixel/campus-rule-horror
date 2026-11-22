@@ -1,3 +1,4 @@
+import type { Player } from "../../../server/src/schema/GameState";
 import type { RoomInit } from "../lib/client";
 
 interface Props {
@@ -6,14 +7,35 @@ interface Props {
   meNodeId: string;
   netDown: boolean;
   selectedId?: string;
+  players?: Array<[string, Player]>;  // 实时位置：节点处漂浮头像
+  meId?: string;
+  hideOthers?: boolean;               // 设置：隐藏其他玩家位置（自己仍可见）
   onSelect: (nodeId: string) => void;
 }
 
-/** 校园俯瞰图：纯文字节点（无圆圈），自己所在节点青色光晕，大地图不显示他人与人数 */
-export function MapView({ nodes, edges, meNodeId, netDown, selectedId, onSelect }: Props) {
+function AvatarDot({ avatar }: { avatar: string }) {
+  const isImg = avatar.startsWith("data:") || avatar.startsWith("/") || avatar.startsWith("assets/");
+  if (isImg) return <img className="map-av-img" src={avatar} alt="" draggable={false} />;
+  return <span className="map-av-emoji">{avatar || "❔"}</span>;
+}
+
+/** 校园俯瞰图：纯文字节点（无圆圈），自己所在节点青色光晕；同节点玩家以漂浮头像实时显示（断网或设置隐藏时不可见） */
+export function MapView({ nodes, edges, meNodeId, netDown, selectedId, players, meId, hideOthers, onSelect }: Props) {
   const adjacent = new Set(
     edges.filter(([a, b]) => a === meNodeId || b === meNodeId).flatMap(([a, b]) => [a, b])
   );
+
+  // 节点 → 在场玩家（观察者可见全员；玩家可见自己，他人按设置）
+  const byNode = new Map<string, Array<{ id: string; q: Player }>>();
+  if (players && !netDown) {
+    for (const [id, q] of players) {
+      if (!q.alive || q.observer) continue;
+      if (hideOthers && meId != null && id !== meId) continue;
+      const arr = byNode.get(q.nodeId) ?? [];
+      arr.push({ id, q });
+      byNode.set(q.nodeId, arr);
+    }
+  }
 
   return (
     <div className={`map ${netDown ? "netdown" : ""}`}>
@@ -47,6 +69,21 @@ export function MapView({ nodes, edges, meNodeId, netDown, selectedId, onSelect 
           );
         })}
       </svg>
+      {/* 漂浮头像层：同节点头像横向堆叠在名称上方 */}
+      {!netDown && nodes.map((n) => {
+        const here = byNode.get(n.id) ?? [];
+        if (!here.length) return null;
+        return (
+          <div key={`av-${n.id}`} className="map-avs" style={{ left: `${n.x}%`, top: `${Math.max(2, n.y - 7)}%` }}>
+            {here.slice(0, 4).map(({ id, q }) => (
+              <span key={id} className={`map-av${id === meId ? " self" : ""}`} title={q.name}>
+                <AvatarDot avatar={q.avatar} />
+              </span>
+            ))}
+            {here.length > 4 && <span className="map-av more">+{here.length - 4}</span>}
+          </div>
+        );
+      })}
       {netDown && <p className="hint">网络中断：所有定位服务已离线</p>}
     </div>
   );

@@ -50,6 +50,8 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
   const [view, setView] = useState<string | null>(null); // null = 地图；否则为节点界面 id
   // 位置被系统改动（如午间自动前往食堂）时，同步刷新选中项与节点界面
   const prevNode = useRef(me.nodeId);
+  // 设置：大地图隐藏其他玩家位置（自己始终可见）
+  const [hideOthers, setHideOthers] = useState(() => localStorage.getItem("hidePositions") === "1");
   useEffect(() => {
     if (prevNode.current !== me.nodeId) {
       setSelected((cur) => (cur === prevNode.current ? me.nodeId : cur));
@@ -68,6 +70,18 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
       <div className="eo-top">
         <span className="eo-title">校园地图</span>
         {!isChair && <span className="eo-ap">行动值 {Math.round(me.ap)}</span>}
+        {!netDown && (
+          <button
+            className={`eo-eye${hideOthers ? " off" : ""}`}
+            title={hideOthers ? "已隐藏其他玩家位置（设置）" : "正在显示其他玩家位置（点击隐藏）"}
+            onClick={() => setHideOthers((v) => {
+              localStorage.setItem("hidePositions", v ? "0" : "1");
+              return !v;
+            })}
+          >
+            {hideOthers ? "🙈 已隐藏他人" : "👁 显示他人"}
+          </button>
+        )}
         {toolbar}
         {closable && <button className="eo-close" onClick={onClose}>收起地图 ✕</button>}
       </div>
@@ -82,6 +96,9 @@ export function ExploreOverlay({ room, nodes, edges, me, myFaction, phase, netDo
                 meNodeId={me.nodeId}
                 netDown={netDown}
                 selectedId={selected}
+                players={[...room.state.players.entries()]}
+                meId={room.sessionId}
+                hideOthers={hideOthers}
                 onSelect={(id) => { setView(null); setSelected(id); }}
               />
             </div>

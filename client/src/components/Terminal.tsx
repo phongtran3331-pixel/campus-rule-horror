@@ -27,7 +27,7 @@ interface Props {
 }
 
 const PHASE_LABEL: Record<string, string> = {
-  lobby: "集合", morning: "上午", noon: "中午", afternoon: "下午",
+  lobby: "集合", ready: "准备", morning: "上午", noon: "中午", afternoon: "下午",
   evening: "晚上", night: "深夜", ended: "结束",
 };
 

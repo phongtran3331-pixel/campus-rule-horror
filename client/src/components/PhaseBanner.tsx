@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 
 const NAMES: Record<string, string> = {
-  lobby: "大厅", morning: "上午", noon: "中午 · 讨论投票",
+  lobby: "大厅", ready: "准备", morning: "上午", noon: "中午 · 讨论投票",
   afternoon: "下午", evening: "晚上", night: "深夜", ended: "已结束",
 };
 const ICONS: Record<string, string> = {
-  lobby: "🏫", morning: "🌅", noon: "🍽️", afternoon: "🌤️",
+  lobby: "🏫", ready: "⏳", morning: "🌅", noon: "🍽️", afternoon: "🌤️",
   evening: "🌆", night: "🌙", ended: "🏁",
 };
 

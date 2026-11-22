@@ -5,6 +5,8 @@ import { PhaseBanner } from "./components/PhaseBanner";
 import { Terminal } from "./components/Terminal";
 import { IntroSequence } from "./components/IntroSequence";
 import { ExploreOverlay } from "./components/ExploreOverlay";
+import { MapView } from "./components/MapView";
+import { AvatarChip } from "./components/PlayerList";
 
 /** 错误边界：任何渲染异常显示引导页而不是黑屏 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { err: string }> {
@@ -30,11 +32,35 @@ export default function App() {
   const [debugRoom, setDebugRoom] = useState(false);
   const [solo, setSolo] = useState(false);
   const [view, setView] = useState<"hub" | "lobby" | "solo">("hub");
-  const enter = (r: GameRoom, debug: boolean, soloMode = false) => { setDebugRoom(debug); setSolo(soloMode); setRoom(r); };
+  const enter = (r: GameRoom, debug: boolean, soloMode = false) => {
+    setDebugRoom(debug); setSolo(soloMode); setRoom(r);
+    // 存档连接信息：刷新/误关页面后可凭此自动重连，角色不丢失
+    sessionStorage.setItem("atto-save", JSON.stringify({ roomId: r.roomId, sessionId: r.sessionId, debug, solo: soloMode }));
+  };
+  const leave = (r: GameRoom) => {
+    r.leave(); // 主动离开：立即注销座位并清除存档
+    sessionStorage.removeItem("atto-save");
+    setRoom(null);
+  };
+
+  // 误关/刷新恢复：有存档且未在对局中时尝试重连
+  useEffect(() => {
+    const raw = sessionStorage.getItem("atto-save");
+    if (!raw) return;
+    try {
+      const save = JSON.parse(raw);
+      if (!save?.roomId || !save?.sessionId) return;
+      colyseus.reconnect(save.roomId, save.sessionId).then((r) => {
+        enter(r, !!save.debug, !!save.solo);
+      }).catch(() => sessionStorage.removeItem("atto-save"));
+    } catch { sessionStorage.removeItem("atto-save"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <ErrorBoundary>
       {room ? (
-        <GameScreen room={room} debugRoom={debugRoom} solo={solo} onLeave={() => setRoom(null)} />
+        <GameScreen room={room} debugRoom={debugRoom} solo={solo} onLeave={() => leave(room)} />
       ) : view === "hub" ? (
         <Hub onEnter={() => setView("lobby")} onSolo={() => setView("solo")} />
       ) : (
@@ -83,6 +109,30 @@ function Hub({ onEnter, onSolo }: { onEnter: () => void; onSolo: () => void }) {
   );
 }
 
+// ---------- 头像 ----------
+
+const PRESET_AVATARS = ["🦊", "🐱", "🐺", "🦉", "🐍", "🎭", "👁️", "🕯️", "🌙", "📓", "🏮", "🧸"];
+
+/** 图片压到 96px dataURL，控制同步体积 */
+function fileToAvatar(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = 96;
+      const c = document.createElement("canvas");
+      c.width = s; c.height = s;
+      const ctx = c.getContext("2d")!;
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, s, s);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 // ---------- 大厅 ----------
 
 function Lobby({ onEnter, onBack, solo = false }: {
@@ -93,6 +143,8 @@ function Lobby({ onEnter, onBack, solo = false }: {
   const [name, setName] = useState(solo ? "测试员" : "");
   const [gender, setGender] = useState<"male" | "female">("male");
   const [faction, setFaction] = useState<"student" | "chair">("student");
+  const [avatar, setAvatar] = useState(PRESET_AVATARS[0]);
+  const [observer, setObserver] = useState(false);
   const [code, setCode] = useState("");
   const [fast, setFast] = useState(false);
   const [debug, setDebug] = useState(false);
@@ -100,8 +152,8 @@ function Lobby({ onEnter, onBack, solo = false }: {
   const [err, setErr] = useState("");
 
   const opts = () => solo
-    ? ({ name, gender, timeScale: fast ? 30 : 1, debug: true, solo: true, soloFaction: faction })
-    : ({ name, gender, timeScale: fast ? 30 : 1, debug });
+    ? ({ name, gender, avatar, timeScale: fast ? 30 : 1, debug: true, solo: true, soloFaction: faction })
+    : ({ name, gender, avatar, observer: observer || undefined, timeScale: fast ? 30 : 1, debug });
 
   const create = async () => {
     setBusy(true); setErr("");
@@ -133,8 +185,31 @@ function Lobby({ onEnter, onBack, solo = false }: {
       <div className="lobby-card">
         <label className="field">
           <span>你的名字</span>
-          <input placeholder="输入名字（≤12 字）" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
+          <div className="name-row">
+            <span className="name-avatar"><AvatarChip avatar={avatar} size={34} /></span>
+            <input placeholder="输入名字（≤12 字）" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
+          </div>
         </label>
+
+        <div className="field">
+          <span>头像</span>
+          <div className="avatar-grid">
+            {PRESET_AVATARS.map((a) => (
+              <button key={a} type="button" className={`avatar-pick${avatar === a ? " on" : ""}`} onClick={() => setAvatar(a)}>
+                {a}
+              </button>
+            ))}
+            <label className={`avatar-pick avatar-upload${avatar.startsWith("data:") ? " on" : ""}`} title="上传图片作头像">
+              {avatar.startsWith("data:") ? <img className="avatar-img" src={avatar} alt="" /> : "＋"}
+              <input type="file" accept="image/*" hidden onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try { setAvatar(await fileToAvatar(f)); } catch { setErr("图片读取失败，换一张试试"); }
+                e.target.value = "";
+              }} />
+            </label>
+          </div>
+        </div>
 
         <div className="field">
           <span>性别</span>
@@ -154,8 +229,19 @@ function Lobby({ onEnter, onBack, solo = false }: {
           </div>
         )}
 
+        {!solo && (
+          <label className="field observer-field">
+            <span>你的角色</span>
+            <div className="seg">
+              <button type="button" className={!observer ? "on" : ""} onClick={() => setObserver(false)}>玩家 · 参战</button>
+              <button type="button" className={observer ? "on" : ""} onClick={() => setObserver(true)}>主持人 · 不参战</button>
+            </div>
+            {observer && <p className="sub">你将开设房间并观战：实时查看全员位置与对局动态，但不参与游戏。</p>}
+          </label>
+        )}
+
         <button className="btn-primary" disabled={busy || !name.trim()} onClick={create}>
-          {busy ? "正在进入校园…" : solo ? "进入单人试玩" : "创建房间"}
+          {busy ? "正在进入校园…" : solo ? "进入单人试玩" : observer ? "创建房间（主持人）" : "创建房间"}
         </button>
 
         {!solo && (
@@ -205,14 +291,16 @@ function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugR
     room.onMessage("ruleSwap", (d: RuleSwapMsg) => setInit((s) => (s ? { ...s, ruleBoard: d.board } : s)));
     room.onMessage("rulePool", (d: { pool: RuleMsg[] }) => setRulePool(d.pool));
     room.onMessage("accuseState", (d: AccuseStateMsg) => setAccuse(d));
-    room.onMessage("gameover", (d: GameOverMsg) => setGameover(d));
+    room.onMessage("gameover", (d: GameOverMsg) => { setGameover(d); sessionStorage.removeItem("atto-save"); });
     room.onMessage("dm", (m: { from: string; text: string; coins: number }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "dm", from: m.from, text: `${m.text}${m.coins > 0 ? `（附 ${m.coins} 币）` : ""}` }]));
     room.onMessage("chat", (m: { from: string; text: string }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "chat", from: m.from, text: m.text }]));
     room.onMessage("notice", (m: { text: string }) =>
       setMsgs((s) => [...s.slice(-99), { kind: "notice", text: m.text }]));
-    return () => { room.leave(); };
+    // 注意：组件卸载不调用 room.leave()——刷新/误关页面按掉线处理，
+    // 服务端保留角色并开启 120 秒重连窗口，重新打开页面凭存档自动恢复。
+    return () => { /* 连接生命周期交由「离开」按钮与断线重连管理 */ };
   }, [room]);
 
   const s = room.state;
@@ -230,6 +318,11 @@ function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugR
   const isHost = room.sessionId === s.hostId;
   const started = s.phase !== "lobby";
 
+  // 主持人（观察者）：观战视图——实时地图 + 全员状态 + 动态
+  if (me?.observer) {
+    return <ObserverView room={room} init={init} players={players} msgs={msgs} onLeave={onLeave} />;
+  }
+
   return (
     <div className="game">
       <PhaseBanner day={s.day} phase={s.phase} endsAt={s.phaseEndsAt} />
@@ -241,6 +334,9 @@ function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugR
           onDone={() => setIntroDone(true)}
         />
       )}
+      {s.phase === "ready" && me && (
+        <ReadyBar room={room} me={me} endsAt={s.phaseEndsAt} players={players} />
+      )}
       {gameover && (
         <GameOverPanel gameover={gameover} players={players} myId={room.sessionId} />
       )}
@@ -250,13 +346,13 @@ function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugR
             <div className="card waiting">
               <h3>对局房间</h3>
               <p className="waiting-code"><b>{room.roomId}</b></p>
-              <p className="sub">把邀请码发给同学 · {players.length} 人在线</p>
+              <p className="sub">把邀请码发给同学 · {players.filter(([, q]) => !q.observer).length} 名玩家在线{me?.observer ? " · 主持人观战中" : ""}</p>
               {isHost ? (
-                <button className="btn-primary" disabled={players.length < 5 && !debugRoom}
+                <button className="btn-primary" disabled={players.filter(([, q]) => !q.observer).length < 5 && !debugRoom}
                   onClick={() => room.send("start")}>
-                  {debugRoom || players.length >= 5
+                  {debugRoom || players.filter(([, q]) => !q.observer).length >= 5
                     ? "开始对局"
-                    : `开始对局（还差 ${5 - players.length} 人）`}
+                    : `开始对局（还差 ${5 - players.filter(([, q]) => !q.observer).length} 人）`}
                 </button>
               ) : (
                 <p className="sub">等待房主开始…</p>
@@ -302,6 +398,90 @@ function GameScreen({ room, debugRoom, solo, onLeave }: { room: GameRoom; debugR
   );
 }
 
+
+/** 准备阶段：1 分钟查看界面与校规，全员点击就绪后提前开始 */
+function ReadyBar({ room, me, endsAt, players }: {
+  room: GameRoom; me: Player; endsAt: number;
+  players: Array<[string, Player]>;
+}) {
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const t = setInterval(force, 500);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+  const all = players.filter(([, q]) => !q.observer);
+  const nReady = all.filter(([, q]) => q.ready).length;
+  return (
+    <div className="ready-bar">
+      <div className="ready-info">
+        <b>对局即将开始</b>
+        <span>熟悉界面与校规，然后点击准备就绪</span>
+      </div>
+      <div className="ready-count">{secs}s</div>
+      {me.ready ? (
+        <span className="ready-done">已就绪 · 等待其他人（{nReady}/{all.length}）</span>
+      ) : (
+        <button className="btn-primary ready-btn" onClick={() => room.send("ready")}>准备就绪</button>
+      )}
+    </div>
+  );
+}
+
+/** 主持人观战视图：实时地图（全员位置）+ 玩家状态 + 对局动态 */
+function ObserverView({ room, init, players, msgs, onLeave }: {
+  room: GameRoom; init: RoomInit | null;
+  players: Array<[string, Player]>;
+  msgs: Msg[];
+  onLeave: () => void;
+}) {
+  const s = room.state;
+  const [showMap, setShowMap] = useState(true);
+  if (!init) return <div className="game"><div className="card">正在载入校园…</div></div>;
+  return (
+    <div className="game obs">
+      <PhaseBanner day={s.day} phase={s.phase} endsAt={s.phaseEndsAt} />
+      <div className="obs-tag">主持人观战 · 不参战</div>
+      <div className="main phone-main">
+        <div className="phone-col">
+          <div className="card obs-players">
+            <h3>全员动态（{players.filter(([, q]) => !q.observer).length} 名玩家）</h3>
+            {players.filter(([, q]) => !q.observer).map(([id, q]) => (
+              <div key={id} className={`obs-row${q.alive ? "" : " dead"}`}>
+                <AvatarChip avatar={q.avatar} size={24} />
+                <span className="obs-name">{q.name}</span>
+                <span className="obs-node">{init.nodes.find((n) => n.id === q.nodeId)?.name ?? q.nodeId}</span>
+                <span className="obs-state">{q.connected ? (q.alive ? `HP${q.hp} SAN${q.san}` : "已出局") : "离线"}</span>
+              </div>
+            ))}
+          </div>
+          <button className="btn-primary" onClick={() => setShowMap((v) => !v)}>{showMap ? "收起地图" : "展开实时地图"}</button>
+          {showMap && (
+            <MapView
+              nodes={init.nodes}
+              edges={init.edges}
+              meNodeId=""
+              netDown={false}
+              players={players}
+              meId=""
+              hideOthers={false}
+              onSelect={() => {}}
+            />
+          )}
+          <div className="card obs-log">
+            <h3>对局动态</h3>
+            <div className="obs-msgs">
+              {msgs.slice(-40).map((m, i) => (
+                <p key={i} className={`obs-msg ${m.kind}`}>{m.text}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <button className="leave" onClick={onLeave}>离开</button>
+    </div>
+  );
+}
 
 /** 结算页：胜负公告 + 身份公示 + 全员归宿 */
 function GameOverPanel({ gameover, players, myId }: {

@@ -6,6 +6,9 @@ export type Faction = "none" | "student" | "chair";
 export class Player extends Schema {
   @type("string") name = "";
   @type("string") gender = ""; // male | female（R1 判定需要）
+  @type("string") avatar = "";  // 头像：emoji 或图片 dataURL / 路径
+  @type("boolean") observer = false; // 主持人：开房间但不参战，可观战全员位置
+  @type("boolean") ready = false;    // 开局前的准备就绪确认
   @type("string") nodeId = "dorm";
   @type("number") hp = 100;
   @type("number") san = 100;
@@ -30,7 +33,7 @@ export class Player extends Schema {
 export class GameState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type("string") hostId = "";
-  @type("string") phase: "lobby" | "morning" | "noon" | "afternoon" | "evening" | "night" | "ended" = "lobby";
+  @type("string") phase: "lobby" | "ready" | "morning" | "noon" | "afternoon" | "evening" | "night" | "ended" = "lobby";
   @type("number") day = 0;                    // 0..4，Day4 后结算
   @type("number") phaseEndsAt = 0;            // epoch ms，0 = 未计时
   @type("number") phaseStartedAt = 0;         // 本时段开始 epoch ms（客户端换算虚拟时刻）

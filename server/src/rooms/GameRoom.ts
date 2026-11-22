@@ -20,6 +20,8 @@ import { loadScenes, loadWiki, loadShop, refToName, parseEvent, parseQuizBranch,
 export interface JoinOptions {
   name?: string;
   gender?: string;
+  avatar?: string; // 头像：emoji 或图片 dataURL
+  observer?: boolean; // 主持人：创建房间但不参战
   timeScale?: number;
   debug?: boolean; // 调试房：房主可无视人数直接开局
   solo?: boolean;        // 单人试玩：跳过匹配直接开局，空位由挂机玩家补齐
@@ -124,6 +126,8 @@ export class GameRoom extends Room<GameState> {
     // M2 流程：投票 / 检举 / 换规 / 午间确认
     this.onMessage("vote", (client, msg: { targetId?: string }) => this.onVote(client, msg));
     this.onMessage("noonDone", (client) => this.onNoonDone(client));
+    // 开局准备阶段：就绪确认
+    this.onMessage("ready", (client) => this.onReady(client));
     this.onMessage("accuse", (client, msg: { targetId?: string }) => this.onAccuse(client, msg));
     this.onMessage("swapRule", (client, msg: { outId?: string; inId?: string }) => this.onSwapRule(client, msg));
     // M3：探索 / 交易 / 生存
@@ -178,9 +182,11 @@ export class GameRoom extends Room<GameState> {
     const p = new Player();
     p.name = String(options.name || `同学${this.state.players.size + 1}`).slice(0, 12);
     p.gender = options.gender === "female" ? "female" : "male";
+    p.avatar = String(options.avatar ?? "").slice(0, 120_000); // dataURL 头像（canvas 已压到 96px）
+    p.observer = !!options.observer && this.state.players.size === 0 && !this.soloFaction; // 仅首位进房者可任主持人，且单人试玩不可
     this.state.players.set(client.sessionId, p);
     if (!this.state.hostId) this.state.hostId = client.sessionId;
-    this.broadcast("notice", { text: `${p.name} 进入了校园（${this.state.players.size} 人在线）` });
+    this.broadcast("notice", { text: `${p.name}${p.observer ? "（主持人）" : ""} 进入了校园（${this.state.players.size} 人在线）` });
   }
 
   onLeave(client: Client, consented?: boolean) {
@@ -193,9 +199,9 @@ export class GameRoom extends Room<GameState> {
       }
     } else if (p) {
       p.connected = false; // 游戏中掉线保留角色
-      // 非主动离开（掉线/刷新）给 90 秒重连窗口，重连即恢复原角色
+      // 非主动离开（掉线/刷新）给 120 秒重连窗口，重连即恢复原角色
       if (!consented && p.alive) {
-        this.allowReconnection(client, 90)
+        this.allowReconnection(client, 120)
           .then(() => {
             const cur = this.state.players.get(client.sessionId);
             if (cur && !cur.connected) {
@@ -211,14 +217,16 @@ export class GameRoom extends Room<GameState> {
   onDispose() {
     this.timer.stop();
     if (this.netTimer) clearTimeout(this.netTimer);
+    if (this.readyTimer) clearTimeout(this.readyTimer);
   }
 
   // ---------- 开局 ----------
 
   private startGame(client: Client) {
     if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
-    const ids = [...this.state.players.keys()];
     const soloMode = this.soloFaction !== null; // 单人试玩：其余座位由挂机玩家补齐
+    // 主持人（观察者）不参战：仅非观察者计入玩家人数与阵营分配
+    const ids = [...this.state.players.keys()].filter((id) => !this.state.players.get(id)!.observer);
     if (ids.length < 5 && !this.debugMode && !soloMode) return;
 
     if (soloMode) {
@@ -269,8 +277,43 @@ export class GameRoom extends Room<GameState> {
       });
     });
 
+    if (soloMode) {
+      // 单人试玩跳过准备阶段，直接入第 0 天
+      this.state.day = 0;
+      this.enterPhase("morning", 0);
+      return;
+    }
+    // 准备阶段：1 分钟（随测试倍速缩放）查看界面与校规，全员就绪后提前开始
     this.state.day = 0;
+    this.state.players.forEach((p) => { p.ready = false; });
+    this.state.phase = "ready";
+    this.state.phaseStartedAt = Date.now();
+    const readyMs = 60_000 / this.timeScale;
+    this.state.phaseEndsAt = Date.now() + readyMs;
+    this.timer.stop();
+    this.readyTimer = setTimeout(() => this.beginDay0(), readyMs);
+    this.broadcast("phase", { phase: "ready", day: 0, endsAt: this.state.phaseEndsAt });
+    this.broadcast("notice", { text: "对局即将开始：你有 1 分钟查看界面与校规，点击「准备就绪」。" });
+  }
+
+  private readyTimer?: NodeJS.Timeout;
+
+  /** 全员就绪或倒计时结束 → 第 0 天上午 */
+  private beginDay0() {
+    if (this.state.phase !== "ready") return;
+    if (this.readyTimer) { clearTimeout(this.readyTimer); this.readyTimer = undefined; }
     this.enterPhase("morning", 0);
+  }
+
+  private onReady(client: Client) {
+    if (this.state.phase !== "ready") return;
+    const p = this.state.players.get(client.sessionId);
+    if (!p || p.observer || p.ready) return;
+    p.ready = true;
+    const players = [...this.state.players.values()].filter((q) => !q.observer);
+    const nReady = players.filter((q) => q.ready).length;
+    this.broadcast("notice", { text: `${p.name} 已准备（${nReady}/${players.length}）` });
+    if (nReady >= players.length) this.beginDay0();
   }
 
   // ---------- 时段推进 ----------
@@ -283,7 +326,7 @@ export class GameRoom extends Room<GameState> {
 
     if (phase === "morning") {
       this.state.players.forEach((p, id) => {
-        if (!p.alive) return;
+        if (!p.alive || p.observer) return;
         p.ap = this.pendingApBonus.has(id) ? 30 : 20; // 表彰兑现：次日 30 AP
         this.recs.set(id, newDayRecord());       // 每日记录清零
         this.prevNode.set(id, p.nodeId);
@@ -297,9 +340,9 @@ export class GameRoom extends Room<GameState> {
     }
     if (phase === "noon") {
       this.noonDone.clear();
-      // 集体自动前往食堂（不消耗 AP）
+      // 集体自动前往食堂（不消耗 AP）；主持人留观
       this.state.players.forEach((p, pid) => {
-        if (!p.alive) return;
+        if (!p.alive || p.observer) return;
         p.nodeId = "canteen";
         let v = this.visits.get("canteen");
         if (!v) { v = new Set(); this.visits.set("canteen", v); }
@@ -404,7 +447,7 @@ export class GameRoom extends Room<GameState> {
   private applyOvernightDecay() {
     const dead: string[] = [];
     this.state.players.forEach((p, id) => {
-      if (!p.alive || this.factionOf.get(id) === "chair") return; // 理事长无生存压力
+      if (!p.alive || p.observer || this.factionOf.get(id) === "chair") return; // 主持人与理事长无生存压力
       p.hunger -= 33;
       if (p.hunger <= 0) { dead.push(id); return; }
       if (p.hunger < 20) p.hp -= 10;
@@ -431,7 +474,7 @@ export class GameRoom extends Room<GameState> {
 
   private onMove(client: Client, msg: { nodeId?: string }) {
     const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive || this.state.phase === "lobby") return;
+    if (!p || !p.alive || p.observer || this.state.phase === "lobby") return;
     const target = NODES.find((n) => n.id === msg?.nodeId);
     if (!target || target.id === p.nodeId) return;
     // 距离计费：近端 1 AP，远端 2 AP（无需逐节点步行，可直达任意节点）
@@ -531,10 +574,10 @@ export class GameRoom extends Room<GameState> {
     this.runChecks(client.sessionId, action);
   }
 
-  /** 在线且存活的玩家 */
+  /** 在线且存活的玩家（不含观察者） */
   private aliveConnected(): string[] {
     const out: string[] = [];
-    this.state.players.forEach((p, id) => { if (p.alive && p.connected) out.push(id); });
+    this.state.players.forEach((p, id) => { if (p.alive && p.connected && !p.observer) out.push(id); });
     return out;
   }
 
@@ -542,7 +585,7 @@ export class GameRoom extends Room<GameState> {
   private onNoonDone(client: Client) {
     if (this.state.phase !== "noon") return;
     const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive || !p.connected || this.state.day !== 0) return;
+    if (!p || !p.alive || p.observer || !p.connected || this.state.day !== 0) return;
     this.noonDone.add(client.sessionId);
     const need = this.aliveConnected().length;
     this.broadcast("notice", { text: `${p.name} 确认讨论结束（${this.noonDone.size}/${need}）` });
@@ -551,7 +594,7 @@ export class GameRoom extends Room<GameState> {
 
   private onVote(client: Client, msg: { targetId?: string }) {
     const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.observer) return;
     if (this.state.phase !== "noon" || this.state.day === 0) return;
     const targetId = String(msg?.targetId ?? "");
     const t = this.state.players.get(targetId);
@@ -650,7 +693,7 @@ export class GameRoom extends Room<GameState> {
   /** 探索（1 AP）：获得杂物或重要物品；理事长假装探索，无消耗无所得 */
   private onExplore(client: Client) {
     const p = this.state.players.get(client.sessionId);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.observer) return;
     if (!["morning", "afternoon", "evening"].includes(this.state.phase)) return;
     if (this.factionOf.get(client.sessionId) === "chair") {
       // 与干事同一表现：同样的掉落文案，只是不实际入包（窥屏无法分辨）
@@ -717,7 +760,7 @@ export class GameRoom extends Room<GameState> {
     const scene = this.scenes[sceneId];
     const ev = scene?.events[eventId];
     if (process.env.SMOKE_DEBUG) console.log(`[scene] ${id} ${sceneId}/${eventId} node=${p?.nodeId} phase=${this.state.phase} ev=${!!ev} alive=${p?.alive}`);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.observer) return;
     if (p.nodeId !== sceneId) return;
     const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
       || (sceneId === "canteen" && this.state.phase === "noon");
@@ -923,7 +966,7 @@ export class GameRoom extends Room<GameState> {
     const p = this.state.players.get(id);
     const sceneId = String(msg?.sceneId ?? "");
     const room = String(msg?.room ?? "");
-    if (!p || !p.alive || p.nodeId !== sceneId) return;
+    if (!p || !p.alive || p.observer || p.nodeId !== sceneId) return;
     if (!this.scenes[sceneId]?.rooms?.[room]) return;
     const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
       || (sceneId === "canteen" && this.state.phase === "noon");
@@ -1681,7 +1724,7 @@ export class GameRoom extends Room<GameState> {
 
   private aliveIds(): string[] {
     const out: string[] = [];
-    this.state.players.forEach((p, id) => { if (p.alive) out.push(id); });
+    this.state.players.forEach((p, id) => { if (p.alive && !p.observer) out.push(id); });
     return out;
   }
 
