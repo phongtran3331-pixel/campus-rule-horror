@@ -48,7 +48,7 @@ async function main() {
   r.send("move", { nodeId: "community" });
   await waitFor(() => me().nodeId === "community");
   let res = await fire("community", "3");
-  check(/没有一把咬得进|对不上/.test(res.text), `无钥匙开办公室被拒（deny=${res.text.slice(0, 24)}…）`);
+  check(/没有一把咬得进|没有一把/.test(res.text), `无钥匙开办公室被拒（deny=${res.text.slice(0, 24)}…）`);
 
   // 2) 无钥匙：tA 锁柜 / tB 铁皮柜拒绝
   r.send("move", { nodeId: "tA" });
@@ -78,7 +78,7 @@ async function main() {
   r.send("move", { nodeId: "community" });
   await waitFor(() => me().nodeId === "community");
   res = await fire("community", "3");
-  check(/档案/.test(res.text) && !/咬得进|对不上/.test(res.text), "持破旧钥匙可开社区办公室");
+  check(/咔哒|断成两截|掉渣|虚掩着/.test(res.text) && !/没有一把/.test(res.text), `持破旧钥匙可开社区办公室（text=${res.text.slice(0, 24)}…）`);
   r.send("move", { nodeId: "tA" });
   await waitFor(() => me().nodeId === "tA");
   res = await fire("tA", "y007c");

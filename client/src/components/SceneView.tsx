@@ -1,5 +1,31 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { Player } from "../../../server/src/schema/GameState";
 import type { GameRoom } from "../lib/client";
+
+// 回收定价 wiki：普通/高价值按 Wiki 价值；关键道具仅「褶皱的咖啡券」可收（40）；消耗品不收
+interface WikiItem { seg: string; num?: number; value: number | null; weight: number; desc: string }
+let wikiCache: Record<string, WikiItem> | null = null;
+function loadWiki(): Promise<Record<string, WikiItem>> {
+  if (wikiCache) return Promise.resolve(wikiCache);
+  return fetch("wiki.json").then((r) => (r.ok ? r.json() : {})).then((j) => { wikiCache = j; return j; }).catch(() => ({}));
+}
+function refNameOf(wiki: Record<string, WikiItem>, ref: string): string {
+  const hit = Object.keys(wiki).find((k) => wiki[k].seg === ref.split("#")[0] && wiki[k].num === Number(ref.split("#")[1]));
+  if (hit) return hit;
+  // 关段物品 wiki 无编号，按条目顺序补 关#1..N
+  const seg = ref.split("#")[0];
+  const n = Number(ref.split("#")[1]);
+  const ordered = Object.keys(wiki).filter((k) => wiki[k].seg === seg && (wiki[k].num == null));
+  return ordered[n - 1] ?? ref;
+}
+function recyclePrice(wiki: Record<string, WikiItem>, ref: string): number | null {
+  const name = refNameOf(wiki, ref);
+  const w = wiki[name];
+  if (!w) return null;
+  if (w.seg === "普" || w.seg === "高") return w.value ?? 1;
+  if (name === "褶皱的咖啡券") return 40;
+  return null;
+}
 
 // 房间卡配色：名称散列 → 色相（同一房间颜色稳定，不同房间错开）
 const roomHue = (name: string): number => {
@@ -46,7 +72,7 @@ type Screen = { k: "hub" } | { k: "room"; id: string } | { k: "result" };
  * 上方叙事文本，中间当前可选行动；点选后选项消失，结果文本浮现，再长出新的选项。
  * 屏幕状态机：hub（房间列表/平铺）→ room（房间内）→ result（事件结果+子分支）。
  */
-export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeId: string; san: number; onExit: () => void }) {
+export function SceneView({ room, nodeId, san, me, onExit }: { room: GameRoom; nodeId: string; san: number; me: Player; onExit: () => void }) {
   const [scene, setScene] = useState<SceneJson | null>(null);
   const [screen, setScreen] = useState<Screen>({ k: "hub" });
   const [text, setText] = useState<TextBlock | null>(null);
@@ -54,6 +80,7 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
   const [result, setResult] = useState<(SceneResult & { eventId: string }) | null>(null);
   const [quiz, setQuiz] = useState<QuizMsg | null>(null);
   const [grantModal, setGrantModal] = useState<{ names: string[]; refs: string[] } | null>(null);
+  const [tradeOpen, setTradeOpen] = useState(false);
 
   // 轮询闭包只认首次渲染：nodeId / scene 必须走 ref，否则切节点后 sceneEntered 被丢弃、rooms 还是空对象
   const nodeIdRef = useRef(nodeId);
@@ -168,6 +195,7 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
     if (screen.k === "hub") {
       if (!hasRooms) {
         for (const id of topIds) opts.push({ key: `e:${id}`, label: strip(scene.events[id].choice), run: () => clickEvent(id), kind: "rect" });
+        opts.push({ key: "exit-hub0", label: "回到大地图", run: onExit, kind: "dim" });
       } else {
         for (const id of topIds) {
           const ev = scene.events[id];
@@ -184,10 +212,10 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         const ev = scene.events[id];
         if (ev.room === screen.id) opts.push({ key: `e:${id}`, label: strip(ev.choice), run: () => clickEvent(id), kind: "rect" });
       }
+      // 退回只能回到选择子节点的位置（地点列表），不能越级回大地图
       opts.push({ key: "back-hub1", label: "返回地点列表", run: goHub, kind: "dim" });
-      opts.push({ key: "exit-room", label: "回到大地图", run: onExit, kind: "dim" });
     } else {
-      // result 屏幕：子分支 + 操作控件；END 后只能返回地点列表（子节点选择界面）或大地图，不能退回房间
+      // result 屏幕：子分支 + 操作控件；END 后只能返回地点列表（子节点选择界面），不能退回房间或大地图
       const ev = result ? scene.events[result.eventId] : null;
       if (result && ev?.children) {
         for (const c of ev.children) {
@@ -199,7 +227,6 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
         for (const a of opActions(room, nodeId, result.op)) opts.push({ key: `op:${a.label}`, label: a.label, run: a.run, kind: "rect" });
       }
       opts.push({ key: "back-hub2", label: "返回地点列表", run: goHub, kind: "dim" });
-      opts.push({ key: "exit-map", label: "回到大地图", run: onExit, kind: "dim" });
     }
   }
 
@@ -249,6 +276,19 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
           </>
         ) : (
           <>
+            {/* 回收站：交易入口（2x2 圆角方块，不消耗 AP） */}
+            {screen.k === "hub" && nodeId === "recycle" && (
+              <div className="sv2-cards">
+                <button
+                  className="sv2-card sv2-card-trade"
+                  style={{ "--h": 150, animationDelay: "0ms" } as CSSProperties}
+                  disabled={busy !== null}
+                  onClick={() => setTradeOpen(true)}
+                >
+                  <span className="sv2-card-name">交易</span>
+                </button>
+              </div>
+            )}
             {opts.map((o) => (
               <button key={o.key} className={`sv2-opt${o.kind === "dim" ? " dim" : ""}`} disabled={busy !== null} onClick={o.run}>
                 {o.label}
@@ -281,6 +321,12 @@ export function SceneView({ room, nodeId, san, onExit }: { room: GameRoom; nodeI
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {tradeOpen && (
+        <div className="sv2-mask">
+          <RecyclePanel me={me} room={room} onClose={() => setTradeOpen(false)} />
         </div>
       )}
     </div>
@@ -375,6 +421,57 @@ function QuizFill({ numeric, onSubmit }: { numeric: boolean; onSubmit: (v: strin
         onKeyDown={(e) => { if (e.key === "Enter") onSubmit(v); }}
       />
       <button className="sv-quiz-go" disabled={!v.trim()} onClick={() => onSubmit(v)}>作答</button>
+    </div>
+  );
+}
+
+/** 回收站交易面板：按 Wiki 价值回收普通/高价值物品与咖啡券；消耗品、其余关键道具不收；一次超过 5 件会掉 SAN */
+function RecyclePanel({ me, room, onClose }: { me: Player; room: GameRoom; onClose: () => void }) {
+  const [wiki, setWiki] = useState<Record<string, WikiItem> | null>(wikiCache);
+  const [qty, setQty] = useState<Record<string, number>>({});
+  useEffect(() => { loadWiki().then(setWiki); }, []);
+
+  const entries = [...me.pack.entries()]
+    .map(([ref, n]) => ({ ref, n, name: wiki ? refNameOf(wiki, ref) : ref, price: wiki ? recyclePrice(wiki, ref) : null }))
+    .sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+  const tradable = entries.filter((e) => e.price != null);
+
+  const total = tradable.reduce((s, e) => s + (e.price ?? 0) * (qty[e.ref] ?? 0), 0);
+  const count = tradable.reduce((s, e) => s + (qty[e.ref] ?? 0), 0);
+
+  const confirm = () => {
+    const refs: string[] = [];
+    for (const e of tradable) for (let i = 0; i < (qty[e.ref] ?? 0); i++) refs.push(e.ref);
+    if (refs.length) room.send("packRecycle", { refs });
+    onClose();
+  };
+
+  return (
+    <div className="sv2-modal sv2-trade">
+      <p className="sv2-modal-title">交易 · 地磅</p>
+      {!wiki ? <p className="sv2-dots">……</p> : tradable.length === 0 ? (
+        <p className="sv2-trade-empty">背包里没有能出手的货。</p>
+      ) : (
+        <div className="sv2-trade-list">
+          {tradable.map((e) => (
+            <div key={e.ref} className="sv2-trade-row">
+              <span className="sv2-trade-name">{e.name}</span>
+              <span className="sv2-trade-have">×{e.n}</span>
+              <span className="sv2-trade-price">{e.price} 币</span>
+              <span className="sv2-trade-qty">
+                <button onClick={() => setQty((q) => ({ ...q, [e.ref]: Math.max(0, (q[e.ref] ?? 0) - 1) }))}>−</button>
+                <b>{qty[e.ref] ?? 0}</b>
+                <button onClick={() => setQty((q) => ({ ...q, [e.ref]: Math.min(e.n, (q[e.ref] ?? 0) + 1) }))}>＋</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="sv2-trade-rule">消耗品与关键道具不收，咖啡券除外。一次递超过五件，老板会盯着你多看一眼。</p>
+      <div className="sv2-modal-btns">
+        <button className="sv2-opt" disabled={count === 0} onClick={confirm}>出掉（{count} 件 · {total} 币）</button>
+        <button className="sv2-opt dim" onClick={onClose}>再想想</button>
+      </div>
     </div>
   );
 }

@@ -70,6 +70,18 @@ export class GameRoom extends Room<GameState> {
   private wiki = loadWiki();
   private shop = loadShop(this.wiki, this.scenes);
   private refName = refToName(this.wiki);
+  // 关段物品 wiki 无编号，按条目顺序补 关#1..N 映射（与 keyStock 同一口径）
+  private segRefName = (() => {
+    const m = new Map<string, string>();
+    const seq: Record<string, number> = {};
+    for (const [name, w] of Object.entries(this.wiki)) {
+      if (w.num != null) continue;
+      const n = (seq[w.seg] = (seq[w.seg] ?? 0) + 1);
+      m.set(`${w.seg}#${n}`, name);
+    }
+    return m;
+  })();
+  private nameOfRef = (ref: string): string | undefined => this.refName.get(ref) ?? this.segRefName.get(ref);
   private claimed = new Set<string>();                     // 先到先得："sceneId:eventId"（全局一次性）
   // 关键物品全局库存：按 Wiki 编号序（与 refToName 同序）从 count "×N" 解析，"若干" 视为无限
   private keyStock = (() => {
@@ -720,6 +732,12 @@ export class GameRoom extends Room<GameState> {
     }
     if (!ev) return;
     const parsed = parseEvent(ev);
+    // 事件进入消耗 AP（与子节点进入同价）：自带 AP 成本标注的深度事件不重复收；
+    // 交易类（购买/回收）不消耗；理事长免费（结算不落库）
+    if (!isChair && parsed.states?.ap == null && !/购买|回收|交易/.test(parsed.op ?? "")) {
+      if (p.ap < 1) { this.sendNoticeTo(id, "行动值不足（需 1 AP）。"); return; }
+      p.ap -= 1;
+    }
 
     // 理事长与干事共用同一套探索（防窥屏）：文本、分支、答题、获得与状态展示完全一致
     // 唯一差异：结算不落库——背包/数值不写、不占点位（不留下"被拿过"痕迹）、前置视为满足、
@@ -1000,27 +1018,43 @@ export class GameRoom extends Room<GameState> {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.nodeId !== "recycle") return;
     if (this.factionOf.get(client.sessionId) === "chair") return;
-    const refs = Array.isArray(msg?.refs) ? msg.refs.map(String) : [];
+    const refs = (Array.isArray(msg?.refs) ? msg.refs.map(String) : []).filter(Boolean);
     if (!refs.length) { this.sendNoticeTo(client.sessionId, "背包里没有选中要回收的东西。"); return; }
+    // Wiki 口径：普通/高价值物品按 Wiki 价值回收；关键道具仅「褶皱的咖啡券」可收（40）；消耗品与其余关键道具不收
+    const priceOf = (ref: string): number | null => {
+      const name = this.nameOfRef(ref);
+      const w = name ? this.wiki[name] : undefined;
+      if (!w) return null;
+      if (w.seg === "普" || w.seg === "高") return w.value ?? 1;
+      if (name === "褶皱的咖啡券") return 40;
+      return null;
+    };
+    const denied = new Set<string>();
     let total = 0;
+    let count = 0;
     for (const ref of refs) {
       const have = p.pack.get(ref) ?? 0;
       if (have <= 0) continue;
-      const name = this.refName.get(ref) ?? ref;
-      const v = this.wiki[name]?.value ?? 1;
-      total += v;
+      const price = priceOf(ref);
+      if (price == null) { denied.add(this.nameOfRef(ref) ?? ref); continue; }
+      total += price;
+      count++;
       if (have > 1) p.pack.set(ref, have - 1); else p.pack.delete(ref);
     }
-    if (total <= 0) { this.sendNoticeTo(client.sessionId, "这些东西不值钱。"); return; }
+    if (count === 0) {
+      this.sendNoticeTo(client.sessionId, denied.size ? `这里不收：${[...denied].join("、")}。` : "这些东西不值钱。");
+      return;
+    }
     p.coins += total;
     let note = "";
-    if (refs.length > 5) {
+    if (count > 5) {
       const dmg = 1 + Math.floor(Math.random() * 20);
       p.san = Math.max(0, p.san - dmg);
       note = ` 递得太多了，老板的眼睛在你脸上停了一秒。（SAN -${dmg}）`;
       if (p.san <= 0) { this.eliminate(client.sessionId, "精神崩溃"); return; }
     }
-    this.sendNoticeTo(client.sessionId, `回收了 ${refs.length} 件物品，+${total} 币。${note}`);
+    const denyNote = denied.size ? ` 退回没收的：${[...denied].join("、")}。` : "";
+    this.sendNoticeTo(client.sessionId, `回收了 ${count} 件物品，+${total} 币。${denyNote}${note}`);
   }
 
   /** 丢弃背包物品（场景获得弹窗「丢弃」按钮；每件扣 1 数量） */

@@ -7,7 +7,7 @@
  "recycle": {
   "name": "回收站",
   "situations": 2,
-  "events": 3
+  "events": 2
  },
  "library": {
   "name": "图书馆",

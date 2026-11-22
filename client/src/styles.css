@@ -611,3 +611,17 @@ button.act.ghost:hover:not(:disabled) { background: rgba(58, 168, 160, 0.22); bo
 .sv2-modal-btns .sv2-opt { flex: 1; }
 .sv2-opt.danger { background: #4a545f; border: 1px solid #5b6673; color: #fff; }
 .sv2-opt.danger:hover:not(:disabled) { background: #5d6a77; border-color: #78868f; }
+
+/* 回收站交易面板 */
+.sv2-trade { width: min(360px, 92%); }
+.sv2-card-trade { cursor: pointer; grid-column: span 2; }
+.sv2-trade-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+.sv2-trade-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px; background: #182433; border: 1px solid #26394c; }
+.sv2-trade-name { color: #e2ecf3; font-size: 14px; }
+.sv2-trade-have { color: #8fa6b8; font-size: 12px; }
+.sv2-trade-price { color: #e8c56b; font-size: 13px; font-weight: 700; }
+.sv2-trade-qty { display: flex; align-items: center; gap: 6px; }
+.sv2-trade-qty button:hover { background: #2c4256; }
+.sv2-trade-qty b { min-width: 20px; text-align: center; color: #fff; font-size: 14px; }
+.sv2-trade-rule { margin: 0; color: #a9c0d2; font-size: 12.5px; line-height: 1.6; }
+.sv2-trade-empty { margin: 0; text-align: center; color: #8fa6b8; font-size: 14px; padding: 12px 0; }
