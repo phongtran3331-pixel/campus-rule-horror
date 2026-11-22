@@ -67,11 +67,11 @@ async function roomA() {
   await waitExplore(r);
   check(me(r).nodeId === "library", "讨论结束返回 noon 前位置（图书馆）");
 
-  // 第 1 日：饥饿过夜下降后验证 +20~40 区间
+  // 第 1 日：饥饿已随探索时段实时累计扣除（无隔夜统一结算）
   r.__allowNoonEnd = false; // 抢先关掉 watcher，避免第 1 日 noon 被立即收束
   await waitNoon(r);
   const h1 = me(r).hunger, c1 = me(r).coins, n1 = notices.length;
-  check(h1 < 100, `过夜饥饿下降（${h1}）`);
+  check(h1 > 0 && h1 < 90, `饥饿已按探索时段实时累计扣除（${h1}）`);
   r.send("lunch", { eat: true });
   await waitFor(() => notices.length > n1, 5000);
   await waitFor(() => me(r).coins === c1 - 10, 5000);

@@ -389,6 +389,7 @@ function opActions(room: GameRoom, sceneId: string, op: string): Array<{ label: 
   if (op.includes("回复健康值50或精神值30")) actions.push({ label: "回复健康值 50", run: () => send("cafe", { kind: "hp" }) });
   if (op.includes("回复健康值50或精神值30")) actions.push({ label: "回复精神值 30", run: () => send("cafe", { kind: "san" }) });
   if (op.includes("调监控")) actions.push({ label: "调监控", run: () => send("camera") });
+  if (op.includes("闸机记录")) actions.push({ label: "查看我的进出记录", run: () => send("gateLog") });
   if (op.includes("查询机器使用记录") || op.includes("记录调阅")) actions.push({ label: "调阅设施记录", run: () => {
     const f = window.prompt("设施：超市售货机/校医院药房/图书馆闸机/操场闸机/体育馆闸机/社区闸机/行政楼影像室/网络中心");
     if (f) send("inspectLog", { facility: f.trim() });

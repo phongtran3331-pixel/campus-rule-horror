@@ -69,6 +69,7 @@ async function main() {
   const nr = results.length;
   r.send("sceneEvent", { sceneId: "recycle", eventId: "2" });
   await waitFor(() => results.length > nr, 5000);
+  await waitFor(() => me().ap === ap0 - 1, 5000);
   check(me().ap === ap0 - 1, `事件进入 -1 AP（${ap0}→${me().ap}）`);
 
   r.leave();

@@ -12,7 +12,7 @@
  "library": {
   "name": "图书馆",
   "situations": 7,
-  "events": 20
+  "events": 21
  },
  "gate": {
   "name": "学校大门",

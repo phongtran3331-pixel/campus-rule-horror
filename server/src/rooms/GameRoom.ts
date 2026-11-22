@@ -48,6 +48,12 @@ export class GameRoom extends Room<GameState> {
   private factionOf = new Map<string, Faction>();          // 阵营（机密）
   private recs = new Map<string, DayRecord>();             // 每人当日行为记录
   private prevNode = new Map<string, string>();            // 每人上一节点（R2）
+  // 图书馆闸机：实际通行日志（enter/leave 独立记录，永久保留，不可篡改；传送不计）
+  private gateLog: Array<{ id: string; day: number; action: "enter" | "leave"; t: string; seq: number }> = [];
+  private gateSeq = 0;
+  // 饥饿实时结算：8:00–11:00 / 14:00–21:00（早/下午/晚探索时段）按游戏小时 5.4 点持续扣除，每日合计 54
+  private hungerTimer: ReturnType<typeof setInterval> | null = null;
+  private hungerLast = 0;
   private votes = new Map<string, string>();               // 当前午间投票 voterId -> targetId
   private board: Rule[] = [];                              // 板上随机规则（可被换走）
   private pool: Rule[] = [];                               // 备选池（理事长换规来源）
@@ -156,6 +162,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("useMedicine", (client, msg: { kind?: string }) => this.onUseMedicine(client, msg));
     // 超市 / 药房交易面板（shop.json 货表 + 每日涨价 + 全局库存）
     this.onMessage("shopBuy", (client, msg: { shop?: string; key?: string }) => this.onShopBuy(client, msg));
+    this.onMessage("gateLog", (client) => this.onGateLog(client));
     this.onMessage("recycle", (client) => this.onRecycle(client));
     // M3：学生社区（预约制 + 四房间）
     this.onMessage("bookSlot", (client, msg: { slot?: string }) => this.onBookSlot(client, msg));
@@ -230,6 +237,48 @@ export class GameRoom extends Room<GameState> {
     this.timer.stop();
     if (this.netTimer) clearTimeout(this.netTimer);
     if (this.readyTimer) clearTimeout(this.readyTimer);
+    if (this.hungerTimer) clearInterval(this.hungerTimer);
+  }
+
+  /** 虚拟时刻（与客户端 vtime 同口径，闸机日志用） */
+  private vtimeNow(): string {
+    const W: Record<string, [number, number]> = {
+      morning: [8, 11], noon: [11, 14], afternoon: [14, 17], evening: [17, 21], night: [21, 23],
+    };
+    if (this.state.phase === "noon") return "11:00"; // 讨论时段停止计时
+    const w = W[this.state.phase];
+    if (!w || !this.state.phaseStartedAt || !this.state.phaseEndsAt || this.state.phaseEndsAt <= this.state.phaseStartedAt) return "--:--";
+    const ratio = Math.min(1, Math.max(0, (Date.now() - this.state.phaseStartedAt) / (this.state.phaseEndsAt - this.state.phaseStartedAt)));
+    const t = w[0] + (w[1] - w[0]) * ratio;
+    const hh = Math.floor(t);
+    const mm = t - hh >= 0.5 ? "30" : "00";
+    return `${String(hh).padStart(2, "0")}:${mm}`;
+  }
+
+  /** 饥饿实时结算：探索时段（8–11、14–21）每游戏小时 -5.4，每日合计 -54；<40 缓慢掉 SAN，<20 缓慢掉 HP */
+  private startHungerClock() {
+    this.hungerLast = Date.now();
+    this.hungerTimer = setInterval(() => this.tickHunger(), 1000);
+  }
+
+  private tickHunger() {
+    const now = Date.now();
+    const dt = (now - this.hungerLast) / 1000;
+    this.hungerLast = now;
+    if (this.state.phase === "ended") return;
+    if (this.state.phase !== "morning" && this.state.phase !== "afternoon" && this.state.phase !== "evening") return;
+    const gh = (dt * this.timeScale) / 60; // 本秒经过的游戏小时数
+    const dead: Array<[string, string]> = [];
+    this.state.players.forEach((p, id) => {
+      if (!p.alive || p.observer || this.factionOf.get(id) === "chair") return;
+      p.hunger = Math.max(0, p.hunger - 5.4 * gh);
+      if (p.hunger <= 0) { dead.push([id, "饥饿归零"]); return; }
+      if (p.hunger < 20) p.hp = Math.max(0, p.hp - 1.2 * gh);
+      else if (p.hunger < 40) p.san = Math.max(0, p.san - 0.6 * gh);
+      if (p.hp <= 0) dead.push([id, "伤重不治"]);
+      else if (p.san <= 0) dead.push([id, "精神崩溃"]);
+    });
+    dead.forEach(([id, cause]) => this.eliminate(id, cause));
   }
 
   // ---------- 开局 ----------
@@ -237,6 +286,7 @@ export class GameRoom extends Room<GameState> {
   private startGame(client: Client) {
     if (client.sessionId !== this.state.hostId || this.state.phase !== "lobby") return;
     const soloMode = this.soloFaction !== null; // 单人试玩：其余座位由挂机玩家补齐
+    this.startHungerClock(); // 饥饿实时结算（探索时段生效，noon/night 暂停）
     // 主持人（观察者）不参战：仅非观察者计入玩家人数与阵营分配
     const ids = [...this.state.players.keys()].filter((id) => !this.state.players.get(id)!.observer);
     if (ids.length < 5 && !this.debugMode && !soloMode) return;
@@ -456,32 +506,10 @@ export class GameRoom extends Room<GameState> {
       this.enterPhase(PHASE_ORDER[idx + 1] as Phase, day);
     } else if (day < DAY_TOTAL) {
       this.state.day = day + 1;
-      this.applyOvernightDecay();
-      if ((this.state.phase as string) === "ended") return;
       this.enterPhase("morning", day + 1);
     } else {
       this.settle("天数耗尽");
     }
-  }
-
-  /** 过夜生存结算：饥饿 -33；<40 缓慢扣 SAN；<20 扣 HP；归零淘汰 */
-  private applyOvernightDecay() {
-    const dead: string[] = [];
-    this.state.players.forEach((p, id) => {
-      if (!p.alive || p.observer || this.factionOf.get(id) === "chair") return; // 主持人与理事长无生存压力
-      p.hunger -= 33;
-      if (p.hunger <= 0) { dead.push(id); return; }
-      if (p.hunger < 20) p.hp -= 10;
-      else if (p.hunger < 40) p.san -= 5;
-      if (p.hp <= 0) dead.push(id);
-    });
-    dead.forEach((id) => {
-      const p = this.state.players.get(id)!;
-      const cause = p.hunger <= 0 ? "饥饿归零" : "伤重不治";
-      p.alive = false; // 先置位，避免 eliminate 递归；存活数变化仍需终局检查
-      this.broadcast("notice", { text: `${p.name}（干事）因${cause}被淘汰。` });
-    });
-    if (dead.length > 0) this.checkFactionEnd();
   }
 
   // ---------- 消息处理 ----------
@@ -532,6 +560,16 @@ export class GameRoom extends Room<GameState> {
 
     const from = p.nodeId;
     p.nodeId = target.id;
+    // 图书馆闸机进出记录：真实移动才记，传送（noon 等）不计
+    if (from === "library" || target.id === "library") {
+      this.gateLog.push({
+        id: client.sessionId,
+        day: this.state.day,
+        action: target.id === "library" ? "enter" : "leave",
+        t: this.vtimeNow(),
+        seq: ++this.gateSeq,
+      });
+    }
     this.subroom.delete(client.sessionId); // 换节点即离开原房间
     // dynamic_visit：本日节点到访去重（含强制传送）
     let v = this.visits.get(target.id);
@@ -548,6 +586,22 @@ export class GameRoom extends Room<GameState> {
       }
     }
     this.prevNode.set(client.sessionId, from);
+  }
+
+  /** 图书馆闸机记录查询：须本人身处图书馆，仅返回自己的进出记录 */
+  private onGateLog(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.observer || this.state.phase === "lobby") return;
+    if (p.nodeId !== "library") { this.sendNoticeTo(client.sessionId, "闸机不在这里。"); return; }
+    const mine = this.gateLog.filter((g) => g.id === client.sessionId).sort((a, b) => a.seq - b.seq);
+    const text = mine.length
+      ? "闸机的屏幕闪了一下，绿光扫过你的脸，逐行吐出你的名字：\n"
+        + mine.map((g) => `第 ${g.day + 1} 日 ${g.t}　${g.action === "enter" ? "进馆" : "出馆"}`).join("\n")
+      : "闸机的屏幕闪了一下，绿光扫过你的脸。上面没有你的名字——至少今天没有。";
+    client.send("sceneResult", {
+      sceneId: "library", eventId: "__gate", taken: false, fake: false,
+      op: null, grants: [], states: {}, text,
+    });
   }
 
   /** 通用动作入口：行为记录 + 规则引擎判定 */
