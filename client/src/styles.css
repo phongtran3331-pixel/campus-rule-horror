@@ -507,6 +507,7 @@ button.act.ghost:hover:not(:disabled) { background: rgba(58, 168, 160, 0.22); bo
 .vp-pick.sel { background: #2c2140; border-color: #8a6fc0; color: #efe8fa; }
 .vp-pick.rule { font-size: 13px; line-height: 1.6; }
 .vp-done { color: #7fd7a8; font-size: 13.5px; margin: 0; }
+.vp-desc { margin: 0; color: #b3a5cc; font-size: 13.5px; line-height: 1.7; }
 .cp-status { margin: 0; color: #9a8cb5; font-size: 13px; }
 .cp-status b { color: #e8b96a; }
 .cp-sec { display: flex; flex-direction: column; gap: 8px; }

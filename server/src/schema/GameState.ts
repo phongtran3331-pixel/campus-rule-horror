@@ -9,6 +9,7 @@ export class Player extends Schema {
   @type("string") avatar = "";  // 头像：emoji 或图片 dataURL / 路径
   @type("boolean") observer = false; // 主持人：开房间但不参战，可观战全员位置
   @type("boolean") ready = false;    // 开局前的准备就绪确认
+  @type("boolean") lunchDone = false; // 今日午餐是否已结算
   @type("string") nodeId = "dorm";
   @type("number") hp = 100;
   @type("number") san = 100;

@@ -126,6 +126,8 @@ export class GameRoom extends Room<GameState> {
     // M2 流程：投票 / 检举 / 换规 / 午间确认
     this.onMessage("vote", (client, msg: { targetId?: string }) => this.onVote(client, msg));
     this.onMessage("noonDone", (client) => this.onNoonDone(client));
+    // 食堂午餐结算（noon 期间随时可选，不阻塞讨论）
+    this.onMessage("lunch", (client, msg: { eat?: boolean }) => this.onLunch(client, msg));
     // 开局准备阶段：就绪确认
     this.onMessage("ready", (client) => this.onReady(client));
     this.onMessage("accuse", (client, msg: { targetId?: string }) => this.onAccuse(client, msg));
@@ -343,7 +345,9 @@ export class GameRoom extends Room<GameState> {
       // 集体自动前往食堂（不消耗 AP）；主持人留观
       this.state.players.forEach((p, pid) => {
         if (!p.alive || p.observer) return;
+        this.prevNode.set(pid, p.nodeId);
         p.nodeId = "canteen";
+        p.lunchDone = false;
         let v = this.visits.get("canteen");
         if (!v) { v = new Set(); this.visits.set("canteen", v); }
         v.add(pid);
@@ -417,6 +421,11 @@ export class GameRoom extends Room<GameState> {
       this.guarantee.clear();
     }
     if (phase === "noon") {
+      // 讨论结束：全员从食堂回到午间传送前的位置
+      this.state.players.forEach((p, pid) => {
+        if (!p.alive || p.observer) return;
+        p.nodeId = this.prevNode.get(pid) ?? "dorm";
+      });
       if (day === 0) {
         // 第 0 日不投票
       } else {
@@ -581,9 +590,56 @@ export class GameRoom extends Room<GameState> {
     return out;
   }
 
-  /** 午间确认：第 0 日不投票，全员确认后跳入 14:00；第 1 日起由投票收束（见 onVote） */
-  private onNoonDone(client: Client) {
+  /** 食堂午餐结算：noon 期间随时可选，不阻塞讨论推进；每人每天一次 */
+  private onLunch(client: Client, msg: { eat?: boolean }) {
     if (this.state.phase !== "noon") return;
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.alive || p.observer || p.lunchDone) return;
+    p.lunchDone = true;
+    const eat = msg?.eat !== false;
+    if (eat) {
+      if (p.coins < 10) {
+        // 余额不足无法购买，按拒绝处理（但不吃保底 SAN 惩罚之外的差额）
+        p.lunchDone = false;
+        this.sendNoticeTo(client.sessionId, "代币不足 10，打饭窗口的阿姨摆了摆手。");
+        return;
+      }
+      p.coins -= 10;
+      const hungerGain = 20 + Math.floor(Math.random() * 21); // +20~40
+      p.hunger = Math.min(100, p.hunger + hungerGain);
+      const parts: string[] = [`午餐下肚：饥饿 +${hungerGain}。`];
+      if (Math.random() < 0.15) {
+        const dmg = 10 + Math.floor(Math.random() * 11); // -10~-20
+        p.hp -= dmg;
+        parts.push(`饭菜的味道不太对（HP -${dmg}）。`);
+      }
+      if (Math.random() < 0.20) {
+        const dmg = 10 + Math.floor(Math.random() * 11); // -10~-20
+        p.san -= dmg;
+        parts.push("邻桌的人一直在看你。（SAN 下降）");
+      }
+      this.sendNoticeTo(client.sessionId, parts.join(""));
+      if (p.hp <= 0) this.eliminate(client.sessionId, "食堂午餐");
+      else if (p.san <= 0) this.eliminate(client.sessionId, "精神崩溃");
+      return;
+    }
+    // 拒绝午餐
+    if (p.coins < 10) {
+      const dmg = 10 + Math.floor(Math.random() * 11); // -10~-20
+      p.san -= dmg;
+      this.sendNoticeTo(client.sessionId, `你空着肚子看完全场。胃酸灼得慌（SAN -${dmg}）。`);
+    } else if (Math.random() < 0.25) {
+      const dmg = 6 + Math.floor(Math.random() * 5); // -6~-10
+      p.san -= dmg;
+      this.sendNoticeTo(client.sessionId, `你拒绝了今天的午餐（SAN -${dmg}）。`);
+    } else {
+      this.sendNoticeTo(client.sessionId, "你拒绝了今天的午餐。");
+    }
+    if (p.san <= 0) this.eliminate(client.sessionId, "精神崩溃");
+  }
+
+  /** 午间确认：第 0 日不投票，全员确认后跳入 14:00；第 1 日起由投票收束（见 onVote） */
+  private onNoonDone(client: Client) {    if (this.state.phase !== "noon") return;
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive || p.observer || !p.connected || this.state.day !== 0) return;
     this.noonDone.add(client.sessionId);
@@ -1558,6 +1614,7 @@ export class GameRoom extends Room<GameState> {
     if (!p) return;
     const g = String(msg?.give ?? "");
     if (g === "coins") p.coins += 50;
+    else if (g === "coins-") p.coins = Math.max(0, p.coins - 50);
     else if (g === "food") p.food += 1;
     else if (g === "medicine") p.medicine += 1;
     else if (g === "coffee") p.coffee += 1;
