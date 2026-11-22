@@ -325,8 +325,8 @@ function opActions(room: GameRoom, sceneId: string, op: string): Array<{ label: 
   if (op.includes("社区预约")) actions.push({ label: "预约上午段", run: () => send("bookSlot", { slot: "am" }) });
   if (op.includes("社区预约")) actions.push({ label: "预约下午段", run: () => send("bookSlot", { slot: "pm" }) });
   if (op.includes("档案调查")) actions.push({ label: "档案调查（选两人）", run: () => {
-    const a = window.prompt("档案A：输入玩家编号（名单见档案页）"); if (!a) return;
-    const b = window.prompt("档案B：输入玩家编号"); if (!b) return;
+    const a = window.prompt("档案A：输入玩家名字"); if (!a) return;
+    const b = window.prompt("档案B：输入玩家名字"); if (!b) return;
     send("officeArchive", { aId: a.trim(), bId: b.trim() });
   } });
   if (op.includes("查阅昨日社区预约")) actions.push({ label: "调阅昨日预约", run: () => send("deptBookings") });
@@ -337,12 +337,11 @@ function opActions(room: GameRoom, sceneId: string, op: string): Array<{ label: 
     const c = window.prompt("三选一：1 破译规则 / 2 三好学生表彰 / 3 匿名担保"); if (!c) return;
     const act = c.trim() === "2" ? "commend" : c.trim() === "3" ? "guarantee" : "decode";
     let targetId = "";
-    if (act !== "decode") { const t = window.prompt("对象玩家编号"); if (!t) return; targetId = t.trim(); }
+    if (act !== "decode") { const t = window.prompt("对象玩家名字"); if (!t) return; targetId = t.trim(); }
     send("press", { action: act, targetId });
   } });
   if (op.includes("回复健康值50或精神值30")) actions.push({ label: "回复健康值 50", run: () => send("cafe", { kind: "hp" }) });
   if (op.includes("回复健康值50或精神值30")) actions.push({ label: "回复精神值 30", run: () => send("cafe", { kind: "san" }) });
-  if (op.includes("校验今日预约时段")) actions.push({ label: "刷闸机进入", run: () => send("bookSlot", { slot: "am" }) });
   if (op.includes("调监控")) actions.push({ label: "调监控", run: () => send("camera") });
   if (op.includes("查询机器使用记录") || op.includes("记录调阅")) actions.push({ label: "调阅设施记录", run: () => {
     const f = window.prompt("设施：超市售货机/校医院药房/图书馆闸机/操场闸机/体育馆闸机/社区闸机/行政楼影像室/网络中心");

@@ -53,6 +53,9 @@ export class GameRoom extends Room<GameState> {
   private callTargets = new Set<string>();                 // 今夜被呼唤的学生（F7）
   // M3：社区预约（key=day）与房间每日使用记录（共享，每房间每天一次）
   private bookings = new Map<number, { am: string[]; pm: string[] }>();
+  private communityDoors = new Map<string, boolean>();     // 四部门门：破旧的钥匙一次性消耗，全局永久解锁
+  private static readonly DEPT_ROOMS = ["办公室", "社区部", "策创部", "宣传部"];
+  private static readonly DOOR_EVENTS: Record<string, string> = { "3": "办公室", "5": "社区部", "7": "策创部", "9": "宣传部" };
   private roomUsed = new Set<string>();
   // M4：网络中心 / 设施日志 / 表彰与担保
   private netTimer?: NodeJS.Timeout;                       // 断网自动恢复
@@ -129,6 +132,7 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("recycle", (client) => this.onRecycle(client));
     // M3：学生社区（预约制 + 四房间）
     this.onMessage("bookSlot", (client, msg: { slot?: string }) => this.onBookSlot(client, msg));
+    this.onMessage("bookingQuery", (client) => this.onBookingQuery(client));
     this.onMessage("officeArchive", (client, msg: { aId?: string; bId?: string }) => this.onOfficeArchive(client, msg));
     this.onMessage("deptBookings", (client) => this.onDeptBookings(client));
     this.onMessage("cceErase", (client, msg: { ruleId?: string }) => this.onCceErase(client, msg));
@@ -295,6 +299,16 @@ export class GameRoom extends Room<GameState> {
           : "午间讨论开始。讨论不计时——全员投票后时间进入 14:00。",
       });
     }
+    if (phase === "evening") {
+      // 社区清场：下午段结束，非理事长留在社区的被请回宿舍
+      this.state.players.forEach((p, pid) => {
+        if (!p.alive || p.nodeId !== "community") return;
+        if (this.factionOf.get(pid) === "chair") return;
+        p.nodeId = "dorm";
+        this.subroom.delete(pid);
+        this.sendNoticeTo(pid, "社区开始清场。你被请回了宿舍。");
+      });
+    }
     if (phase === "night") {
       this.accuse = { attempts: 0, failures: 0, swapped: false };
       this.callTargets.clear();
@@ -423,6 +437,21 @@ export class GameRoom extends Room<GameState> {
     if (target.id === "admin" && !isChair && !this.hasAdminPass(client.sessionId)) {
       this.sendNoticeTo(client.sessionId, "行政楼门禁亮红：需要行政楼通行卡。");
       return;
+    }
+    // 学生社区：仅上午/下午开放（中午、晚上关闭）。第 0 日为开放日；第 N 日需预约了第 N 日对应时段
+    if (target.id === "community" && !isChair) {
+      if (this.state.phase !== "morning" && this.state.phase !== "afternoon") {
+        this.sendNoticeTo(client.sessionId, "学生社区只在上午、下午开放（中午及晚上清场）。");
+        return;
+      }
+      if (this.state.day >= 1) {
+        const b = this.bookings.get(this.state.day);
+        const ok = this.state.phase === "morning" ? b?.am.includes(client.sessionId) : b?.pm.includes(client.sessionId);
+        if (!ok) {
+          this.sendNoticeTo(client.sessionId, `你未预约第 ${this.state.day} 日的${this.state.phase === "morning" ? "上午" : "下午"}段。打开「校园预约」应用可约明天的时段。`);
+          return;
+        }
+      }
     }
 
     const from = p.nodeId;
@@ -728,6 +757,10 @@ export class GameRoom extends Room<GameState> {
       return;
     }
 
+    // 学生社区四部门门：消耗破旧的钥匙(关#1)或万能钥匙(关#7)——一次消耗，全局永久解锁
+    const deptRoom = sceneId === "community" ? GameRoom.DOOR_EVENTS[eventId] : undefined;
+    if (deptRoom) { this.onCommunityDoor(client, eventId, deptRoom); return; }
+
     // 物品前置：need 全部持有 / needAny 至少一件；不满足回 deny 文案，不结算
     const lacksAll = (ev.need ?? []).filter((r) => (p.pack.get(r) ?? 0) < 1);
     const lacksAny = (ev.needAny ?? []).length > 0 && (ev.needAny ?? []).every((r) => (p.pack.get(r) ?? 0) < 1);
@@ -827,6 +860,28 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
+  /** 社区四部门门：破旧钥匙(关#1)优先、万能钥匙(关#7)亦可——一次性消耗，全局永久解锁 */
+  private onCommunityDoor(client: Client, eventId: string, room: string) {
+    const id = client.sessionId;
+    const p = this.state.players.get(id)!;
+    if (this.communityDoors.get(room)) {
+      client.send("sceneResult", { sceneId: "community", eventId, taken: false, fake: false, op: null, grants: [], states: {}, text: `${room}的门虚掩着。锁早就坏了，不会再锁上。` });
+      return;
+    }
+    const pack = p.pack;
+    const used = (pack.get("关#1") ?? 0) > 0 ? "关#1" : (pack.get("关#7") ?? 0) > 0 ? "关#7" : null;
+    if (!used) {
+      client.send("sceneResult", { sceneId: "community", eventId, taken: false, fake: false, op: null, grants: [], states: {}, text: "锁孔比普通的锁大一圈。你手里的东西没有一把对得上。" });
+      return;
+    }
+    const left = (pack.get(used) ?? 0) - 1;
+    if (left > 0) pack.set(used, left); else pack.delete(used);
+    this.communityDoors.set(room, true);
+    this.log("学生社区", `${p.name} 打开了${room}`);
+    client.send("sceneResult", { sceneId: "community", eventId, taken: false, fake: false, op: null, grants: [], states: {},
+      text: used === "关#7" ? "万能钥匙插进锁孔就开始掉渣。锁舌弹开，钥匙断在里面——这扇门以后不会再锁了。" : "钥匙在锁孔里转到底，咔哒。你拔钥匙时它断成了两截——这扇门以后不会再锁了。" });
+  }
+
   /**
    * 天数衰减：负向状态变化随天数推移加重，每天增加 |v|/5（截断取整），eff = v - day*trunc(|v|/5)；
    * 例：标注 -6，第 1 天 -7、第 2 天 -8；正向变化保持标注值；行动值（AP）属行动成本不缩放。
@@ -855,10 +910,18 @@ export class GameRoom extends Room<GameState> {
     const exploreOk = ["morning", "afternoon", "evening"].includes(this.state.phase)
       || (sceneId === "canteen" && this.state.phase === "noon");
     if (!exploreOk) { this.sendNoticeTo(id, "当前时段不能探索这里。"); return; }
+    // 社区四部门门：钥匙一次性消耗、全局永久解锁；理事长可进入但不消耗
+    if (sceneId === "community" && GameRoom.DEPT_ROOMS.includes(room) && this.factionOf.get(id) !== "chair") {
+      if (!this.communityDoors.get(room)) {
+        this.sendNoticeTo(id, "门锁着。需要有人用钥匙打开（消耗一把破旧的钥匙，永久开启）。");
+        return;
+      }
+    }
     if (this.factionOf.get(id) !== "chair") {
       if (p.ap < 1) { this.sendNoticeTo(id, "行动值不足（需 1 AP）。"); return; }
       p.ap -= 1;
     }
+    this.subroom.set(id, `${sceneId}:${room}`);
     client.send("sceneEntered", { sceneId, room });
   }
 
@@ -1104,21 +1167,55 @@ export class GameRoom extends Room<GameState> {
   // ---------- M3：学生社区（预约制） ----------
 
   /** 预约：每段 ≤3 人，每人每天一段；am=上午，pm=下午 */
+  /** 校园预约：任意地点可约，约的是「明天」的上午/下午段（每段≤3人，每人每天限约一段） */
   private onBookSlot(client: Client, msg: { slot?: string }) {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive) return;
     if (this.factionOf.get(client.sessionId) === "chair") { this.sendNoticeTo(client.sessionId, "你不需要预约。门会为你开着。"); return; }
     const slot = msg?.slot === "pm" ? "pm" : "am";
-    const day = this.state.day;
-    let b = this.bookings.get(day);
-    if (!b) { b = { am: [], pm: [] }; this.bookings.set(day, b); }
+    const target = this.state.day + 1; // 预约明天
+    let b = this.bookings.get(target);
+    if (!b) { b = { am: [], pm: [] }; this.bookings.set(target, b); }
     if (b.am.includes(client.sessionId) || b.pm.includes(client.sessionId)) {
-      this.sendNoticeTo(client.sessionId, "你今天已预约过一段，每人每天限一段。");
+      this.sendNoticeTo(client.sessionId, `第 ${target} 日你已约过一段，每人每天限一段。`);
       return;
     }
     if (b[slot].length >= 3) { this.sendNoticeTo(client.sessionId, "该时段已约满（每段最多 3 人）。"); return; }
     b[slot].push(client.sessionId);
-    this.sendNoticeTo(client.sessionId, `预约成功：第 ${day} 日${slot === "am" ? "上午" : "下午"}段（第 ${b[slot].length}/3 位）。`);
+    this.sendNoticeTo(client.sessionId, `预约成功：第 ${target} 日${slot === "am" ? "上午" : "下午"}段（第 ${b[slot].length}/3 位）。时段内刷闸机进入。`);
+    this.pushBookingState();
+  }
+
+  /** 推送明日预约余量给全场（校园预约应用实时显示） */
+  private pushBookingState() {
+    const target = this.state.day + 1;
+    const b = this.bookings.get(target);
+    for (const c of this.clients) {
+      const id = c.sessionId;
+      c.send("bookingState", {
+        targetDay: target,
+        am: b?.am.length ?? 0,
+        pm: b?.pm.length ?? 0,
+        mine: b?.am.includes(id) ? "am" : b?.pm.includes(id) ? "pm" : null,
+        openDay: this.state.day === 0, // 第 0 日社区开放日
+      });
+    }
+  }
+
+  private onBookingQuery(client: Client) {
+    this.pushBookingStateFor(client.sessionId);
+  }
+
+  private pushBookingStateFor(id: string) {
+    const target = this.state.day + 1;
+    const b = this.bookings.get(target);
+    this.clients.find((c) => c.sessionId === id)?.send("bookingState", {
+      targetDay: target,
+      am: b?.am.length ?? 0,
+      pm: b?.pm.length ?? 0,
+      mine: b?.am.includes(id) ? "am" : b?.pm.includes(id) ? "pm" : null,
+      openDay: this.state.day === 0,
+    });
   }
 
   /** 设施使用日志（M4 查阅卡调阅：只有时间与类别，没有姓名） */
@@ -1127,21 +1224,19 @@ export class GameRoom extends Room<GameState> {
     if (this.facilityLog.length > 400) this.facilityLog.shift();
   }
 
-  /** 当前是否可使用社区房间：人在社区 + 约到了当前时段 */
+  /** 人在社区且当前时段可停留（预约在 onMove 闸把关；理事长不受限） */
   private canUseCommunity(id: string): boolean {
     const p = this.state.players.get(id);
     if (!p || p.nodeId !== "community") return false;
-    const b = this.bookings.get(this.state.day);
-    if (!b) return false;
-    if (this.state.phase === "morning") return b.am.includes(id);
-    if (this.state.phase === "afternoon") return b.pm.includes(id);
-    return false; // 中午不可进入
+    return this.state.phase === "morning" || this.state.phase === "afternoon";
   }
 
-  private roomCheck(id: string, room: string, key: string): boolean {
+  /** 房间功能闸：理事长全免；必须物理进入对应房间（subroom 匹配）；每房间每日一次 */
+  private roomCheck(id: string, room: string): boolean {
     if (this.factionOf.get(id) === "chair") return true; // 理事长直接进入，走假装交互分支
-    if (!this.canUseCommunity(id)) { this.sendNoticeTo(id, "未预约当前时段（中午社区关闭）。"); return false; }
-    if (key && !this.hasKey(id, key)) { this.sendNoticeTo(id, "门锁着。需要对应钥匙。"); return false; }
+    if (!this.canUseCommunity(id)) { this.sendNoticeTo(id, "社区现在不开放。"); return false; }
+    const sub = this.subroom.get(id);
+    if (sub !== `community:${room}`) { this.sendNoticeTo(id, "请进入对应房间后使用。"); return false; }
     if (this.roomUsed.has(room)) { this.sendNoticeTo(id, "今天已经有人用过这里了（每房间每日一次）。"); return false; }
     return true;
   }
@@ -1161,6 +1256,14 @@ export class GameRoom extends Room<GameState> {
     return (pack?.get("关#3") ?? 0) > 0 || (pack?.get("关#7") ?? 0) > 0;
   }
 
+  /** 按 sessionId 或玩家名字解析（客户端可传名字，取首个匹配）；返回 [sessionId, Player] */
+  private resolvePlayer(ref: string): [string, Player] | undefined {
+    const byId = this.state.players.get(ref);
+    if (byId) return [ref, byId];
+    for (const [sid, p] of this.state.players) if (p.name === ref) return [sid, p];
+    return undefined;
+  }
+
   /** 办公室档案：调查 2 名存活学生是否同一阵营（强信息点，每日一份） */
   private onOfficeArchive(client: Client, msg: { aId?: string; bId?: string }) {
     const id = client.sessionId;
@@ -1170,14 +1273,14 @@ export class GameRoom extends Room<GameState> {
       this.sendNoticeTo(id, "你翻开档案袋。里面有每个人的字迹样本、几张合影、一份没写完的检查……你都记住了。");
       return;
     }
-    if (!this.roomCheck(id, "office", "key_office")) return;
-    const a = this.state.players.get(String(msg?.aId ?? ""));
-    const b = this.state.players.get(String(msg?.bId ?? ""));
-    if (!a || !b || !a.alive || !b.alive || msg?.aId === msg?.bId) { this.sendNoticeTo(id, "档案科找不到这两份档案。"); return; }
-    this.roomUsed.add("office");
+    if (!this.roomCheck(id, "办公室")) return;
+    const ra = this.resolvePlayer(String(msg?.aId ?? ""));
+    const rb = this.resolvePlayer(String(msg?.bId ?? ""));
+    if (!ra || !rb || !ra[1].alive || !rb[1].alive || ra[0] === rb[0]) { this.sendNoticeTo(id, "档案科找不到这两份档案。"); return; }
+    this.roomUsed.add("办公室");
     this.log("社区闸机", "办公室调阅档案");
-    const same = this.factionOf.get(String(msg?.aId)) === this.factionOf.get(String(msg?.bId));
-    this.sendNoticeTo(id, `【档案】${a.name} 与 ${b.name} ${same ? "属于同一阵营" : "不属于同一阵营"}。`);
+    const same = this.factionOf.get(ra[0]) === this.factionOf.get(rb[0]);
+    this.sendNoticeTo(id, `【档案】${ra[1].name} 与 ${rb[1].name} ${same ? "属于同一阵营" : "不属于同一阵营"}。`);
   }
 
   /** 社区部：查询昨天的社区预约情况 */
@@ -1189,8 +1292,8 @@ export class GameRoom extends Room<GameState> {
       this.sendNoticeTo(id, "预约簿摊在桌上。昨天每段的名字你都背下来了。");
       return;
     }
-    if (!this.roomCheck(id, "dept", "key_dept")) return;
-    this.roomUsed.add("dept");
+    if (!this.roomCheck(id, "社区部")) return;
+    this.roomUsed.add("社区部");
     this.log("社区闸机", "社区部调阅记录");
     const y = this.bookings.get(this.state.day - 1);
     const fmt = (ids?: string[]) => (ids && ids.length ? ids.map((x) => this.state.players.get(x)?.name ?? "?").join("、") : "无人");
@@ -1206,12 +1309,12 @@ export class GameRoom extends Room<GameState> {
       this.sendNoticeTo(id, "你擦了擦一块白板。字迹还在。");
       return;
     }
-    if (!this.roomCheck(id, "cce", "key_cce")) return;
+    if (!this.roomCheck(id, "策创部")) return;
     const ruleId = String(msg?.ruleId ?? "");
     const idx = this.board.findIndex((r) => r.id === ruleId);
     if (idx < 0) { this.sendNoticeTo(id, "板上没有这条规则（只能抹除随机规则）。"); return; }
     this.board.splice(idx, 1);
-    this.roomUsed.add("cce");
+    this.roomUsed.add("策创部");
     this.log("社区闸机", "策创部使用记录");
     this.broadcast("ruleSwap", { board: this.board });
     this.broadcast("notice", { text: "【校规】某条随机校规的字迹淡了下去，像从没写过。无人认领这件事。" });
@@ -1227,10 +1330,10 @@ export class GameRoom extends Room<GameState> {
       this.sendNoticeTo(id, "你坐在咖啡屋里，看着窗外。这里的时间好像慢一点。");
       return;
     }
-    if (!this.roomCheck(id, "cafe", "")) return; // 咖啡屋凭咖啡券，不查钥匙
+    if (!this.roomCheck(id, "咖啡屋")) return; // 咖啡屋凭咖啡券，不查门（公共开放区）
     if (p.coffee <= 0) { this.sendNoticeTo(id, "需要一张咖啡券。"); return; }
     p.coffee -= 1;
-    this.roomUsed.add("cafe");
+    this.roomUsed.add("咖啡屋");
     this.log("社区闸机", "咖啡屋消费");
     const kind = msg?.kind === "san" ? "san" : "hp";
     if (kind === "hp") p.hp = Math.min(100, p.hp + 50); else p.san = Math.min(100, p.san + 30);
@@ -1328,28 +1431,28 @@ export class GameRoom extends Room<GameState> {
       this.sendNoticeTo(id, "你在校园墙上敲了敲。后台的发布界面你闭着眼都能操作。");
       return;
     }
-    if (!this.roomCheck(id, "press", "key_press")) return;
+    if (!this.roomCheck(id, "宣传部")) return;
     const action = String(msg?.action ?? "");
     if (action === "decode") {
       const withDetail = this.board.filter((r) => r.detail);
       if (!withDetail.length) { this.sendNoticeTo(id, "板上已无可破译的规则。"); return; }
       const picked = [...withDetail].sort(() => Math.random() - 0.5).slice(0, 2);
-      this.roomUsed.add("press");
+      this.roomUsed.add("宣传部");
       this.log("社区闸机", "校园墙发布");
       picked.forEach((r) => this.broadcast("notice", { text: `【校园墙·破译】${r.detail}` }));
     } else if (action === "commend") {
-      const t = this.state.players.get(String(msg?.targetId ?? ""));
-      if (!t || !t.alive) return;
-      this.roomUsed.add("press");
+      const rt = this.resolvePlayer(String(msg?.targetId ?? ""));
+      if (!rt || !rt[1].alive) return;
+      this.roomUsed.add("宣传部");
       this.log("社区闸机", "校园墙发布");
-      this.commend = { id: String(msg?.targetId), day: this.state.day };
-      this.broadcast("notice", { text: `【校园墙】经研究决定，授予 ${t.name}「三好学生」表彰：下次午间讨论拥有 1.5 票与归票权。` });
+      this.commend = { id: rt[0], day: this.state.day };
+      this.broadcast("notice", { text: `【校园墙】经研究决定，授予 ${rt[1].name}「三好学生」表彰：下次午间讨论拥有 1.5 票与归票权。` });
     } else if (action === "guarantee") {
-      const t = this.state.players.get(String(msg?.targetId ?? ""));
-      if (!t || !t.alive) return;
-      this.roomUsed.add("press");
+      const rt = this.resolvePlayer(String(msg?.targetId ?? ""));
+      if (!rt || !rt[1].alive) return;
+      this.roomUsed.add("宣传部");
       this.log("社区闸机", "校园墙发布");
-      this.guarantee.set(String(msg?.targetId), id);
+      this.guarantee.set(rt[0], id);
       this.broadcast("notice", { text: "【校园墙】出现一条匿名担保。被担保者若今日违规，夜间将免于被检举；若无违规，担保双方各受 -25HP/-25SAN 的惩戒。" });
     }
   }

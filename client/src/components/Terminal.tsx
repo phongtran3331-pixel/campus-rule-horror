@@ -621,80 +621,40 @@ function ExplorePanel({ p }: { p: Props }) {
   );
 }
 
-/** 学生社区页：预约 + 四房间功能（点选式，无 prompt） */
+/** 校园预约：任意地点可开，约的是明天；社区功能须物理进入对应房间后使用 */
 function BookingApp({ p }: { p: Props }) {
-  const { room, me, myFaction, players, init } = p;
+  const { room, me, myFaction } = p;
   const send = (type: string, msg?: unknown) => room.send(type, msg);
-  const [archA, setArchA] = useState<string | null>(null);
-  const [archB, setArchB] = useState<string | null>(null);
-  const [eraseId, setEraseId] = useState<string | null>(null);
-  const [pressTarget, setPressTarget] = useState<string | null>(null);
-  const [pressKind, setPressKind] = useState<"commend" | "guarantee" | null>(null);
+  const [st, setSt] = useState<{ targetDay: number; am: number; pm: number; mine: "am" | "pm" | null; openDay: boolean } | null>(null);
+  const wired = useRef(false);
+  useEffect(() => {
+    if (wired.current) return; // StrictMode 双挂载防护
+    wired.current = true;
+    room.onMessage("bookingState", (s) => setSt(s));
+    room.send("bookingQuery");
+  }, [room]);
   if (!me) return null;
-  if (me.nodeId !== "community") return <p className="t-empty">请前往学生社区后使用本功能。</p>;
-  if (myFaction !== "student") return <p className="t-empty">理事长无需预约。</p>;
-  const meId = room.sessionId;
+  if (myFaction !== "student") return <p className="t-empty">理事长无需预约。社区的门会为你开着。</p>;
 
+  const slots = [
+    { key: "am" as const, label: "上午段", n: st?.am ?? 0 },
+    { key: "pm" as const, label: "下午段", n: st?.pm ?? 0 },
+  ];
   return (
     <div className="bk">
+      {st?.openDay && <p className="cp-sec-title">今天是社区开放日——无需预约，直接前往。</p>}
       <div className="cp-sec">
-        <p className="cp-sec-title">闸机预约（每天一段，每段≤3 人）</p>
+        <p className="cp-sec-title">预约 · 第 {st?.targetDay ?? "?"} 日（每天限一段，每段≤3 人）</p>
         <div className="row wrap">
-          <Btn label="预约上午段" onClick={() => send("bookSlot", { slot: "am" })} />
-          <Btn label="预约下午段" onClick={() => send("bookSlot", { slot: "pm" })} />
-        </div>
-        <Btn label="社区部 · 调阅昨日预约" onClick={() => send("deptBookings")} />
-      </div>
-
-      <div className="cp-sec">
-        <p className="cp-sec-title">办公室 · 档案调查（查两人是否同阵营，每天一份）</p>
-        <p className="cp-hint">第一人：</p>
-        <PlayerPicker players={players} meId={meId} sel={archA} onSel={setArchA} />
-        <p className="cp-hint">第二人：</p>
-        <PlayerPicker players={players} meId={meId} sel={archB} onSel={setArchB} />
-        <Btn label="提交档案调查" onClick={() => {
-          if (archA && archB) { send("officeArchive", { aId: archA, bId: archB }); setArchB(null); }
-        }} />
-      </div>
-
-      <div className="cp-sec">
-        <p className="cp-sec-title">策创部 · 抹除随机规矩（理事长不会知道）</p>
-        <div className="vp-list">
-          {(init?.ruleBoard ?? []).filter((r) => r.id.startsWith("R")).map((r) => (
-            <button key={r.id} className={`vp-pick rule${eraseId === r.id ? " sel" : ""}`} onClick={() => setEraseId(r.id)}>
-              {r.id} {r.text}
-            </button>
+          {slots.map((s) => (
+            <Btn key={s.key} label={st?.mine ? (st.mine === s.key ? `已预约${s.label}` : `已约${st.mine === "am" ? "上午" : "下午"}段`) : `预约${s.label}（${s.n}/3）`}
+              onClick={() => send("bookSlot", { slot: s.key })} />
           ))}
         </div>
-        <Btn label={eraseId ? `抹除 ${eraseId}` : "先选一条规矩"} danger onClick={() => {
-          if (eraseId) { send("cceErase", { ruleId: eraseId }); setEraseId(null); }
-        }} />
       </div>
-
       <div className="cp-sec">
-        <p className="cp-sec-title">宣传部 · 校园墙</p>
-        <div className="row wrap">
-          <Btn label="破译两条规矩" onClick={() => send("press", { action: "decode" })} />
-          <Btn label="三好学生表彰" onClick={() => setPressKind(pressKind === "commend" ? null : "commend")} />
-          <Btn label="匿名担保" onClick={() => setPressKind(pressKind === "guarantee" ? null : "guarantee")} />
-        </div>
-        {pressKind && (
-          <>
-            <p className="cp-hint">{pressKind === "commend" ? "表彰对象（次日 15 AP + 1.5 票归票权）：" : "担保对象（今日违规则免检举，否则双方 -25HP/-25SAN）："}</p>
-            <PlayerPicker players={players} meId={meId} sel={pressTarget} onSel={setPressTarget} />
-            <Btn label={pressKind === "commend" ? "发布表彰" : "发布担保"} onClick={() => {
-              if (pressTarget) { send("press", { action: pressKind, targetId: pressTarget }); setPressTarget(null); setPressKind(null); }
-            }} />
-          </>
-        )}
-      </div>
-
-      <div className="cp-sec">
-        <p className="cp-sec-title">时光里的咖啡屋</p>
-        <div className="row wrap">
-          <Btn label="☕ 回复健康值 50" onClick={() => send("cafe", { kind: "hp" })} />
-          <Btn label="☕ 回复精神值 30" onClick={() => send("cafe", { kind: "san" })} />
-        </div>
+        <p className="cp-sec-title">社区功能</p>
+        <p className="t-empty">进入学生社区后，用「破旧的钥匙」打开办公室、社区部、策创部、宣传部的门（消耗一把，永久开启），进房后使用对应功能。</p>
       </div>
     </div>
   );
