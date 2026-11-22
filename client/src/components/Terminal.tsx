@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Player } from "../../../server/src/schema/GameState";
 import { ITEM_CATALOG, type ItemDef } from "../../../server/src/data/items";
 import type { AccuseStateMsg, Faction, GameRoom, RoomInit, RuleMsg } from "../lib/client";
@@ -32,15 +32,22 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 const APPS = [
-  { id: "bag",      name: "背包",     icon: "🎒" },
-  { id: "chat",     name: "聊天",     icon: "💬" },
-  { id: "wall",     name: "校园墙",   icon: "📰" },
-  { id: "tasks",    name: "任务",     icon: "📋" },
-  { id: "explore",  name: "自由探索", icon: "🧭" },
-  { id: "notes",    name: "备忘录",   icon: "📝" },
-  { id: "booking",  name: "校园预约", icon: "📅" },
-  { id: "profile",  name: "档案信息", icon: "🪪" },
+  { id: "bag",      name: "背包",     icon: "🎒", hue: 28 },
+  { id: "chat",     name: "聊天",     icon: "💬", hue: 190 },
+  { id: "wall",     name: "校园墙",   icon: "📰", hue: 45 },
+  { id: "tasks",    name: "任务",     icon: "📋", hue: 140 },
+  { id: "explore",  name: "自由探索", icon: "🧭", hue: 210 },
+  { id: "notes",    name: "备忘录",   icon: "📝", hue: 265 },
+  { id: "booking",  name: "校园预约", icon: "📅", hue: 330 },
+  { id: "profile",  name: "档案信息", icon: "🪪", hue: 8 },
 ] as const;
+
+// 发言者名字 → 稳定色相（同一玩家颜色始终一致）
+function nameHue(name: string): number {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + (ch.codePointAt(0) ?? 0)) % 360;
+  return h;
+}
 type AppId = (typeof APPS)[number]["id"];
 
 export function Terminal(props: Props) {
@@ -100,7 +107,7 @@ export function Terminal(props: Props) {
             <div className="t-grid">
               {APPS.map((a) => (
                 <button key={a.id} className="t-app" onClick={() => setApp(a.id)}>
-                  <span className="t-icon">{a.icon}</span>
+                  <span className="t-icon" style={{ "--h": a.hue } as CSSProperties}>{a.icon}</span>
                   <span className="t-name">{a.name}</span>
                 </button>
               ))}
@@ -149,13 +156,7 @@ function renderApp(app: AppId, p: Props): ReactNode {
       return <ChatPanel msgs={msgs} onSendChat={onSendChat} room={room} players={players} meId={room.sessionId} />;
 
     case "wall":
-      return (
-        <div className="chat-log t-fill">
-          {msgs.filter((m) => m.kind === "notice").slice(-30).map((m, i) => (
-            <div key={i} className="notice">{m.text}</div>
-          ))}
-        </div>
-      );
+      return <WallFeed msgs={msgs} />;
 
     case "tasks":
       return (
@@ -496,13 +497,70 @@ function DmForm({ room, players, meId }: { room: GameRoom; players: Array<[strin
     <div className="dm-form">
       <p className="cp-hint">选择私聊对象：</p>
       <PlayerPicker players={players} meId={meId} sel={target} onSel={setTarget} />
-      <input value={text} placeholder="私信内容（可空）" onChange={(e) => setText(e.target.value)}
+      <input value={text} placeholder="私信内容（可空，纯转账也行）" onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && sendDm()} />
       <div className="row">
         <input value={coins} inputMode="numeric" placeholder="转账金额" style={{ width: 110 }}
           onChange={(e) => setCoins(e.target.value)} />
-        <button className="act" disabled={!target} onClick={sendDm}>发送</button>
+        <button className="act" disabled={!target} onClick={sendDm}>{target ? "发送私信" : "先选对象"}</button>
       </div>
+    </div>
+  );
+}
+
+/** 聊天消息体：公共气泡 / 私信卡片 / 公告 */
+function MsgBody({ m }: { m: Msg }) {
+  if (m.kind === "chat") {
+    const hue = nameHue(m.from ?? "");
+    return (
+      <div className="chat-item chat">
+        <span className="chat-ava" style={{ "--h": hue } as CSSProperties}>{(m.from ?? "?").slice(0, 1)}</span>
+        <div className="chat-bubble">
+          <b style={{ color: `hsl(${hue}, 62%, 72%)` }}>{m.from}</b>
+          <p>{m.text}</p>
+        </div>
+      </div>
+    );
+  }
+  if (m.kind === "dm") {
+    return (
+      <div className="chat-item dm">
+        <span className="chat-ava dm-ava">🔒</span>
+        <div className="chat-bubble dm-bubble">
+          <b>{m.from} 的私信</b>
+          <p>{m.text}</p>
+        </div>
+      </div>
+    );
+  }
+  if (m.kind === "notice") {
+    return (
+      <div className="chat-item notice">
+        <span className="chat-ava notice-ava">📢</span>
+        <div className="chat-bubble notice-bubble"><p>{m.text}</p></div>
+      </div>
+    );
+  }
+  return (
+    <div className="chat-item sys">
+      <div className="chat-bubble sys-bubble"><p>{m.text}</p></div>
+    </div>
+  );
+}
+
+/** 校园墙：公告流（卡片式，倒序最新在上） */
+function WallFeed({ msgs }: { msgs: Msg[] }) {
+  const list = msgs.filter((m) => m.kind === "notice").slice(-30).reverse();
+  return (
+    <div className="wall-feed t-fill">
+      <p className="wall-sub">全校公告 · 实时张贴</p>
+      {list.length === 0 && <p className="t-empty">墙上暂时什么都没贴。</p>}
+      {list.map((m, i) => (
+        <div key={i} className="wall-card">
+          <span className="wall-pin">📌</span>
+          <p>{m.text}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -513,16 +571,19 @@ function ChatPanel({ msgs, onSendChat, room, players, meId }: {
   players: Array<[string, Player]>; meId: string;
 }) {
   const [dmOpen, setDmOpen] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+  const shown = msgs.filter((m) => m.kind !== "notice");
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [msgs.length]);
   return (
     <>
-      <div className="chat-log t-fill">
-        {msgs.filter((m) => m.kind !== "notice").map((m, i) => (
-          <div key={i} className={m.kind}>
-            {m.kind === "chat" ? <><b>{m.from}：</b>{m.text}</> : <i className="dm">{m.from} 私信：{m.text}</i>}
-          </div>
-        ))}
+      <div className="chat-log t-fill" ref={logRef}>
+        {shown.map((m, i) => <MsgBody key={i} m={m} />)}
+        {shown.length === 0 && <p className="t-empty">还没有人说话。食堂见。</p>}
       </div>
-      <button className="act ghost" onClick={() => setDmOpen((v) => !v)}>{dmOpen ? "收起私聊" : "私聊 / 转账"}</button>
+      <button className="act ghost" onClick={() => setDmOpen((v) => !v)}>{dmOpen ? "收起私聊" : "🔒 私聊 / 转账"}</button>
       {dmOpen && <DmForm room={room} players={players} meId={meId} />}
       <ChatInput onSend={onSendChat} />
     </>
