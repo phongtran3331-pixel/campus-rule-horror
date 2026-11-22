@@ -47,6 +47,7 @@ async function main() {
   r.send("packRecycle", { refs: ["普#1", "高#3", "耗#1", "关#1", "关#4"] });
   await waitFor(() => notices.length > n0, 5000);
   const got = notices[notices.length - 1];
+  await waitFor(() => me().coins === coins0 + 193, 5000); // 等状态补丁同步（notice 先于补丁到达）
   check(me().coins - coins0 === 3 + 150 + 40, `按 wiki 价值成交（+${me().coins - coins0} 币）`);
   check(/未拆封的牛奶|破旧的钥匙/.test(got), `拒收消耗品与关键道具（${got.slice(0, 40)}…）`);
   check((me().pack.get("普#1") ?? 0) === 0 && (me().pack.get("高#3") ?? 0) === 0 && (me().pack.get("关#4") ?? 0) === 0, "成交品已出包");
@@ -58,6 +59,7 @@ async function main() {
   const n1 = notices.length;
   r.send("packRecycle", { refs: ["普#2", "普#2", "普#2", "普#2", "普#2", "普#2"] });
   await waitFor(() => notices.length > n1, 5000);
+  await waitFor(() => me().san < san0, 5000);
   check(me().san < san0, `批量回收 SAN 下降（${san0}→${me().san}）`);
   check((me().pack.get("普#2") ?? 0) === 0, "批量件已出包");
 
