@@ -187,18 +187,6 @@ export class GameRoom extends Room<GameState> {
     if (this.timeScale > 1) {
       this.onMessage("debug", (client, msg: { give?: string }) => this.onDebug(client, msg));
     }
-    // 沙盒测试房：抽好规则板即开放全图探索，不启动对局计时
-    if (this.sandbox) {
-      const drawn = drawRuleBoard();
-      this.board = drawn.board;
-      this.pool = drawn.pool;
-      this.state.day = 0;
-      this.state.phase = "morning";
-      this.state.phaseStartedAt = Date.now();
-      this.onMessage("sandboxRole", (client) => this.onSandboxRole(client));
-      this.onMessage("sandboxReset", (client) => this.onSandboxReset(client));
-      this.sandboxTimer = setInterval(() => this.sandboxTopUp(), 2000);
-    }
   }
 
   onJoin(client: Client, options: JoinOptions) {
@@ -1853,12 +1841,6 @@ export class GameRoom extends Room<GameState> {
   private eliminate(id: string, cause: string) {
     const p = this.state.players.get(id);
     if (!p || !p.alive) return;
-    if (this.sandbox) {
-      // 测试员不会出局：倒下即恢复，继续测试其他内容
-      p.hp = 50; p.san = 50; p.hunger = Math.max(p.hunger, 40);
-      this.sendNoticeTo(id, `测试模式：按规则你已因「${cause}」倒下，但测试员不会出局，状态已恢复。`);
-      return;
-    }
     p.alive = false;
     const faction = this.factionOf.get(id) === "chair" ? "理事长" : "干事";
     this.broadcast("notice", { text: `${p.name}（${faction}）因${cause}被淘汰。` });
@@ -1898,81 +1880,6 @@ export class GameRoom extends Room<GameState> {
       reason,
       chairs: aliveChairs.map((id) => this.state.players.get(id)!.name),
       students: aliveStudents.map((id) => this.state.players.get(id)!.name),
-    });
-  }
-
-  // ---------- 沙盒（探索测试房） ----------
-
-  /** 测试员进房：发地图/规则板，默认干事身份，资金充裕 */
-  private joinSandbox(client: Client, options: JoinOptions) {
-    const id = client.sessionId;
-    if (this.state.players.has(id)) { // 断线重进：补发开局数据
-      this.state.players.get(id)!.connected = true;
-      client.send("init", this.sandboxInit());
-      client.send("role", { faction: this.factionOf.get(id) ?? "student", chairs: [] });
-      return;
-    }
-    const p = new Player();
-    p.name = String(options.name || "测试员").slice(0, 12);
-    p.gender = options.gender === "female" ? "female" : "male";
-    p.coins = 100;
-    this.state.players.set(id, p);
-    this.factionOf.set(id, "student");
-    this.recs.set(id, newDayRecord());
-    this.prevNode.set(id, p.nodeId);
-    client.send("init", this.sandboxInit());
-    client.send("role", { faction: "student", chairs: [] });
-    this.sendNoticeTo(id, "探索测试：自由走动，触发事件、答题、购物、回收。数值会自动回复，永不淘汰。");
-  }
-
-  private sandboxInit() {
-    return {
-      nodes: NODES,
-      edges: EDGES,
-      fixedRules: FIXED_RULES,
-      ruleBoard: this.board,
-      dayTotal: DAY_TOTAL,
-      lootMult: 1.5,
-    };
-  }
-
-  /** 切换干事/理事长视角：理事长的假交互也可测试 */
-  private onSandboxRole(client: Client) {
-    const id = client.sessionId;
-    if (!this.state.players.has(id)) return;
-    const next: Faction = this.factionOf.get(id) === "chair" ? "student" : "chair";
-    this.factionOf.set(id, next);
-    client.send("role", { faction: next, chairs: [] });
-    this.sendNoticeTo(id, next === "chair"
-      ? "已切换为理事长视角：交互均为假装交互——能看到房间信息，但不消耗、不获得、不占点位。"
-      : "已切换为干事视角：交互正常结算。此视角下请遵守校规，违规会被通报。");
-  }
-
-  /** 重置：先到先得点位、背包、违规记录全部清零，资金与状态回满 */
-  private onSandboxReset(client: Client) {
-    const p = this.state.players.get(client.sessionId);
-    if (!p) return;
-    this.claimed.clear();
-    this.visits.clear();
-    this.recycleBatch.clear();
-    this.roomUsed.clear();
-    this.todayViolationEvents = 0;
-    this.recs.set(client.sessionId, newDayRecord());
-    p.pack.clear();
-    p.items.clear();
-    p.keys = "";
-    p.food = 0; p.medicine = 0; p.scissors = 0; p.coffee = 0;
-    p.junk = 0; p.junkValue = 0; p.cards = 0;
-    p.coins = 100; p.hp = 100; p.san = 100; p.hunger = 100; p.ap = 10; p.alive = true;
-    this.sendNoticeTo(client.sessionId, "已重置：先到先得点位恢复可领，背包清空，资金与状态回满。");
-  }
-
-  /** 沙盒兜底：AP/饥饿/资金快见底时自动回补，保证测试不断流 */
-  private sandboxTopUp() {
-    this.state.players.forEach((p) => {
-      if (p.ap < 2) p.ap = 10;
-      if (p.hunger < 10) p.hunger = 60;
-      if (p.coins < 10) p.coins = 80;
     });
   }
 
