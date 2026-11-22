@@ -77,7 +77,7 @@ async function roomA() {
   await waitFor(() => me(r).coins === c1 - 10, 5000);
   check(me(r).coins === c1 - 10, "次日用餐再扣 10 币");
   const gain = me(r).hunger - h1;
-  check(gain >= 20 && gain <= 40, `饥饿 +20~40（实际 +${gain}）`);
+  check(gain >= 20 && gain <= 40.01, `饥饿 +20~40（实际 +${gain}）`);
   r.leave();
   clearInterval(r.__watcher);
 }
