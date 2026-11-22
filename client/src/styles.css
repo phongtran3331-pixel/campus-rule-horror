@@ -250,8 +250,6 @@ button.act {
 }
 button.act:hover:not(:disabled) { background: #40546f; border-color: var(--teal); }
 button.act:disabled { opacity: 0.45; cursor: default; }
-button.act.danger { background: #4a2622; border-color: #c0503c; color: #ffb3ab; }
-button.act.danger:hover:not(:disabled) { background: #5c2f29; border-color: #e06a52; }
 button.act.ghost { background: rgba(58, 168, 160, 0.12); border-color: #2e7a74; color: #9fe8e0; }
 button.act.ghost:hover:not(:disabled) { background: rgba(58, 168, 160, 0.22); border-color: var(--teal); color: #c8fff7; }
 
@@ -611,5 +609,5 @@ button.act.ghost:hover:not(:disabled) { background: rgba(58, 168, 160, 0.22); bo
 .sv2-modal-item img { width: 96px; height: 96px; object-fit: contain; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.7)); }
 .sv2-modal-btns { display: flex; gap: 8px; margin-top: 4px; }
 .sv2-modal-btns .sv2-opt { flex: 1; }
-.sv2-opt.danger { border-color: #5a2c2c; color: #d9a0a0; }
-.sv2-opt.danger:hover:not(:disabled) { background: #2a1518; border-color: #c33; color: #f0c8c8; }
+.sv2-opt.danger { background: #4a545f; border: 1px solid #5b6673; color: #fff; }
+.sv2-opt.danger:hover:not(:disabled) { background: #5d6a77; border-color: #78868f; }
