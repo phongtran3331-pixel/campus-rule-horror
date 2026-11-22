@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { GameRoom } from "./rooms/GameRoom.js";
+import { TestRoom } from "./rooms/TestRoom.js";
 
 const app = express();
 app.use(cors());
@@ -10,6 +11,7 @@ app.get("/healthz", (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
 const gameServer = new Server({ server: createServer(app) });
 gameServer.define("game", GameRoom);
+gameServer.define("test", TestRoom);
 
 const port = Number(process.env.PORT || 2567);
 gameServer.listen(port).then(() => {

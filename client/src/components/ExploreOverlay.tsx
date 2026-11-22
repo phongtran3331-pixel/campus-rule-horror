@@ -176,6 +176,9 @@ function NodeView({ room, node, me, phase, netDown, onBack }: {
       {/* 文游式全屏场景：上方叙事文本，中间选项，底部系统行动 */}
       <SceneView room={room} nodeId={at} san={me.san} me={me} onExit={onBack} />
 
+      {/* M6：真实场景文本（环视 + 事件 + 结算） */}
+      <SceneView room={room} nodeId={at} san={me.san} />
+
       <div className="row wrap eo-actions">
         {me.food > 0 && <Btn label={`进食（🍞${me.food}）`} onClick={() => send("eat", { nodeId: at })} />}
         {at === "dorm" && <Btn label="确认门牌" onClick={() => send("doorplate")} />}
